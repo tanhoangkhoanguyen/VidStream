@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Video data never goes into git
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.m4v
+
+# Local scratch
+tmp/
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
