@@ -1,0 +1,40 @@
+{
+ "access_token": "<redacted>",
+ "expires_in": 3882,
+ "token_type": "bearer",
+ "restricted_to": [
+  {
+   "scope": "item_download",
+   "object": {
+    "type": "file",
+    "id": "2039692924103",
+    "file_version": {
+     "type": "file_version",
+     "id": "2252394380903",
+     "sha1": "16f87a943c4af95c88b981d8aadd705fad4a7a13"
+    },
+    "sequence_id": "0",
+    "etag": "0",
+    "sha1": "16f87a943c4af95c88b981d8aadd705fad4a7a13",
+    "name": "<redacted>"
+   }
+  },
+  {
+   "scope": "item_preview",
+   "object": {
+    "type": "file",
+    "id": "2039692924103",
+    "file_version": {
+     "type": "file_version",
+     "id": "2252394380903",
+     "sha1": "16f87a943c4af95c88b981d8aadd705fad4a7a13"
+    },
+    "sequence_id": "0",
+    "etag": "0",
+    "sha1": "16f87a943c4af95c88b981d8aadd705fad4a7a13",
+    "name": "<redacted>"
+   }
+  }
+ ],
+ "issued_token_type": "urn:ietf:params:oauth:token-type:access_token"
+}

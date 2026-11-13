@@ -1,0 +1,35 @@
+{
+ "total_count": 12,
+ "entries": [
+  {
+   "type": "folder",
+   "id": "335647450918",
+   "etag": "0",
+   "size": 233578161
+  },
+  {
+   "type": "folder",
+   "id": "335647458118",
+   "etag": "0",
+   "size": 156068165206
+  },
+  {
+   "type": "folder",
+   "id": "335647455718",
+   "etag": "2",
+   "size": 179961318550
+  }
+ ],
+ "offset": 0,
+ "limit": 3,
+ "order": [
+  {
+   "by": "type",
+   "direction": "ASC"
+  },
+  {
+   "by": "name",
+   "direction": "ASC"
+  }
+ ]
+}
