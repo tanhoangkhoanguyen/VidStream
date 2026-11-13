@@ -5,6 +5,26 @@ plugins {
 
 group = "io.github.tanhoangkhoanguyen"
 
+fun git(vararg args: String): Provider<String> =
+  providers
+    .exec {
+      commandLine("git", *args)
+      isIgnoreExitValue = true
+    }
+    .standardOutput
+    .asText
+    .map { it.trim().ifEmpty { null } }
+
+// Tag v1.2.0 -> 1.2.0; no tag -> 0.0.0-SNAPSHOT+<sha>. "-dirty" marks uncommitted changes.
+version =
+  git("describe", "--tags", "--dirty", "--match", "v[0-9]*")
+    .map { it.removePrefix("v") }
+    .orElse(git("describe", "--always", "--dirty").map { "0.0.0-SNAPSHOT+$it" })
+    .get()
+
+// No timestamp: the same commit gives the same jar.
+springBoot { buildInfo { excludes = setOf("time") } }
+
 java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }
 
 dependencies {
