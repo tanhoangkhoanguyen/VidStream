@@ -1,6 +1,7 @@
 plugins {
   java
   alias(libs.plugins.spring.boot)
+  alias(libs.plugins.spotless)
 }
 
 group = "io.github.tanhoangkhoanguyen"
@@ -35,6 +36,9 @@ dependencies {
   testImplementation(libs.spring.boot.starter.test)
   testRuntimeOnly(libs.junit.platform.launcher)
 }
+
+// `check` fails on unformatted code; `spotlessApply` fixes it.
+spotless { java { googleJavaFormat(libs.versions.google.java.format.get()) } }
 
 tasks.test { useJUnitPlatform() }
 
