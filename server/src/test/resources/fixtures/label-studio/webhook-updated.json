@@ -1,0 +1,115 @@
+{
+ "action": "ANNOTATION_UPDATED",
+ "annotation": {
+  "id": 1,
+  "result": [
+   {
+    "id": "1DDrYD3PcR",
+    "type": "timelinelabels",
+    "value": {
+     "ranges": [
+      {
+       "end": 60,
+       "start": 31
+      }
+     ],
+     "timelinelabels": [
+      "Hand movement"
+     ]
+    },
+    "origin": "manual",
+    "to_name": "video",
+    "from_name": "segments"
+   },
+   {
+    "id": "6K4ZUGM1Rk",
+    "type": "timelinelabels",
+    "value": {
+     "ranges": [
+      {
+       "end": 18,
+       "start": 4
+      }
+     ],
+     "timelinelabels": [
+      "Keep"
+     ]
+    },
+    "origin": "manual",
+    "to_name": "video",
+    "from_name": "segments"
+   },
+   {
+    "id": "XVTkhjI0ux",
+    "type": "choices",
+    "value": {
+     "choices": [
+      "Reacting"
+     ]
+    },
+    "origin": "manual",
+    "to_name": "video",
+    "from_name": "clip_class"
+   },
+   {
+    "id": "_-bXbkje9O",
+    "type": "choices",
+    "value": {
+     "choices": [
+      "NEXT"
+     ]
+    },
+    "origin": "manual",
+    "to_name": "video",
+    "from_name": "merge"
+   }
+  ],
+  "was_cancelled": false,
+  "ground_truth": false,
+  "created_at": "2026-11-12T16:18:07.756214Z",
+  "updated_at": "2026-11-12T16:31:01.809091Z",
+  "draft_created_at": "2026-11-12T16:16:31.005034Z",
+  "lead_time": 770.714,
+  "prediction": {},
+  "result_count": 4,
+  "unique_id": "ea97182d-7038-4c7c-9b49-352028f44cd0",
+  "import_id": null,
+  "last_action": null,
+  "bulk_created": false,
+  "task": 1,
+  "project": 1,
+  "completed_by": 1,
+  "updated_by": 1,
+  "parent_prediction": null,
+  "parent_annotation": null,
+  "last_created_by": null
+ },
+ "project": {
+  "id": 1
+ },
+ "task": {
+  "id": 1,
+  "data": {
+   "fps": 30,
+   "video": "/data/local-files/?d=test/clip.mp4"
+  },
+  "meta": {},
+  "created_at": "2026-11-12T00:32:24.077133Z",
+  "updated_at": "2026-11-12T16:31:01.959584Z",
+  "is_labeled": true,
+  "allow_skip": true,
+  "overlap": 1,
+  "inner_id": 1,
+  "total_annotations": 1,
+  "cancelled_annotations": 0,
+  "total_predictions": 0,
+  "precomputed_agreement": null,
+  "comment_count": 0,
+  "unresolved_comment_count": 0,
+  "last_comment_updated_at": null,
+  "project": 1,
+  "updated_by": 1,
+  "file_upload": null,
+  "comment_authors": []
+ }
+}

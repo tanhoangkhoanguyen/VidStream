@@ -1,0 +1,11 @@
+{
+ "action": "ANNOTATIONS_DELETED",
+ "annotations": [
+  {
+   "id": 2
+  }
+ ],
+ "project": {
+  "id": 1
+ }
+}
