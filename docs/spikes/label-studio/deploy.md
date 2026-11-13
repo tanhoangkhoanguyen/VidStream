@@ -15,6 +15,8 @@
 | Tenancy | Community Edition: every active user sees every project and file. Isolation = one instance per dataset. |
 | `SECRET_KEY` | If unset, generated into `<data>/.env` (mode 600). Set it explicitly per instance instead. |
 | Labeling UI | Clips play and seek, including a copy-merged clip across the join and a rotated clip (portrait). |
+| Startup stability | Random Python errors while loading feature flags and YAML at startup (2026-11-12): 3 of ~16 starts exited with code 1; once a uwsgi worker died with signal 11 (respawned). Cause unknown. Use `restart: unless-stopped` and a healthcheck; re-check on the ARM host (see [oracle.md](../oracle.md)). |
+| Healthcheck | `wget -qO- 127.0.0.1:8000/health` → `{"status": "UP"}`. Not `localhost`: it resolves to `::1`, and uwsgi listens on IPv4 only. |
 
 ## RAM (idle, after login and a few requests)
 
