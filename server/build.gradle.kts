@@ -2,6 +2,7 @@ plugins {
   java
   alias(libs.plugins.spring.boot)
   alias(libs.plugins.spotless)
+  jacoco
 }
 
 group = "io.github.tanhoangkhoanguyen"
@@ -40,7 +41,35 @@ dependencies {
 // `check` fails on unformatted code; `spotlessApply` fixes it.
 spotless { java { googleJavaFormat(libs.versions.google.java.format.get()) } }
 
-tasks.test { useJUnitPlatform() }
+tasks.test {
+  useJUnitPlatform()
+  finalizedBy(tasks.jacocoTestReport)
+}
+
+tasks.jacocoTestCoverageVerification {
+  // Left out of the gate. A pattern that matches nothing fails the build.
+  val excludes = listOf("**/VidStreamApplication.class")
+  val classes = sourceSets.main.get().output.classesDirs
+  classDirectories.setFrom(classes.asFileTree.matching { exclude(excludes) })
+  violationRules {
+    rule {
+      limit {
+        counter = "LINE"
+        minimum = "0.80".toBigDecimal()
+      }
+      limit {
+        counter = "BRANCH"
+        minimum = "0.60".toBigDecimal()
+      }
+    }
+  }
+  doFirst {
+    val stale = excludes.filter { p -> classes.asFileTree.matching { include(p) }.isEmpty }
+    if (stale.isNotEmpty()) throw GradleException("Coverage excludes match nothing: $stale")
+  }
+}
+
+tasks.check { dependsOn(tasks.jacocoTestCoverageVerification) }
 
 // Only the Boot jar ships.
 tasks.jar { enabled = false }
