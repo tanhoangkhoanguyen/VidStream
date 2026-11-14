@@ -32,9 +32,10 @@ java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }
 dependencies {
   // Gradle platform instead of the dependency-management plugin: same BOM, less build logic.
   implementation(platform(libs.spring.boot.bom))
-  implementation(libs.spring.boot.starter)
+  implementation(libs.spring.boot.starter.webmvc)
+  implementation(libs.spring.boot.starter.actuator)
 
-  testImplementation(libs.spring.boot.starter.test)
+  testImplementation(libs.spring.boot.starter.webmvc.test)
   testImplementation(libs.archunit.junit5)
   testRuntimeOnly(libs.junit.platform.launcher)
 }

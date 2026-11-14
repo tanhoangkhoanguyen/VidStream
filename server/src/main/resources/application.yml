@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: vidstream
+  threads:
+    virtual:
+      enabled: true
