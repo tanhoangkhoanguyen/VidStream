@@ -79,5 +79,7 @@ tasks.jacocoTestCoverageVerification {
 
 tasks.check { dependsOn(tasks.jacocoTestCoverageVerification) }
 
-// Only the Boot jar ships.
+// Only the Boot jar ships, under a fixed name for the Dockerfile; the version is inside.
 tasks.jar { enabled = false }
+
+tasks.bootJar { archiveFileName = "vidstream.jar" }
