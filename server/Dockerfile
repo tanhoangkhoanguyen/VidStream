@@ -6,7 +6,7 @@ RUN java -Djarmode=tools -jar vidstream.jar extract --layers --destination extra
 
 FROM eclipse-temurin:25-jre-noble
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg \
+ && apt-get install -y --no-install-recommends ffmpeg curl \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --no-create-home --uid 10001 vidstream
 WORKDIR /app
