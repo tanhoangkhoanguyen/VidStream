@@ -15,7 +15,7 @@ import org.springframework.web.client.RestClient;
     webEnvironment = WebEnvironment.DEFINED_PORT,
     properties = {"vidstream.role=worker", "management.server.port=0"})
 @Import(PostgresTestConfig.class)
-class WorkerRoleTest {
+class WorkerRoleIT {
 
   @Autowired WebServerApplicationContext context;
 

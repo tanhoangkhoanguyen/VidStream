@@ -49,12 +49,30 @@ dependencies {
 // `check` fails on unformatted code; `spotlessApply` fixes it.
 spotless { java { googleJavaFormat(libs.versions.google.java.format.get()) } }
 
+// `*Test`: unit, no I/O. `*IT`: containers, needs Docker.
 tasks.test {
   useJUnitPlatform()
-  finalizedBy(tasks.jacocoTestReport)
+  exclude("**/*IT.class")
+}
+
+val integrationTest by
+  tasks.registering(Test::class) {
+    description = "Runs *IT tests against containers."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform()
+    include("**/*IT.class")
+    shouldRunAfter(tasks.test)
+  }
+
+// Coverage counts unit and integration tests together.
+tasks.withType<JacocoReportBase>().configureEach {
+  executionData(tasks.test.get(), integrationTest.get())
 }
 
 tasks.jacocoTestCoverageVerification {
+  finalizedBy(tasks.jacocoTestReport)
   // Left out of the gate. A pattern that matches nothing fails the build.
   val excludes = listOf("**/VidStreamApplication.class")
   val classes = sourceSets.main.get().output.classesDirs
@@ -77,7 +95,7 @@ tasks.jacocoTestCoverageVerification {
   }
 }
 
-tasks.check { dependsOn(tasks.jacocoTestCoverageVerification) }
+tasks.check { dependsOn(integrationTest, tasks.jacocoTestCoverageVerification) }
 
 // Only the Boot jar ships, under a fixed name for the Dockerfile; the version is inside.
 tasks.jar { enabled = false }

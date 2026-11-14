@@ -12,7 +12,7 @@ import org.springframework.test.web.servlet.client.RestTestClient;
     webEnvironment = WebEnvironment.RANDOM_PORT,
     properties = {"vidstream.role=web", "management.server.port=0"})
 @Import(PostgresTestConfig.class)
-class WebRoleTest {
+class WebRoleIT {
 
   @LocalServerPort int port;
 
