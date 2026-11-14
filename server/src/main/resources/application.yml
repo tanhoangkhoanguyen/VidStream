@@ -15,3 +15,11 @@ logging:
   structured:
     format:
       console: ecs
+management:
+  server:
+    # Internal only: the proxy routes the app port, never this one.
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
