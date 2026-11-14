@@ -4,3 +4,8 @@ server:
 management:
   server:
     port: 8081
+spring:
+  datasource:
+    hikari:
+      # Short transactions only (claim, heartbeat, commit); ffmpeg runs without a connection.
+      maximum-pool-size: 2

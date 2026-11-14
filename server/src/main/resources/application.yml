@@ -4,6 +4,10 @@ spring:
   profiles:
     # Role = profile (web or worker). Startup fails when vidstream.role is unset.
     active: ${vidstream.role}
+  datasource:
+    hikari:
+      # Virtual threads are unbounded; the pool caps concurrent DB work.
+      maximum-pool-size: 10
   threads:
     virtual:
       enabled: true
