@@ -15,20 +15,23 @@ x-server-env: &server-env
   SPRING_DATASOURCE_USERNAME: vidstream
   SPRING_DATASOURCE_PASSWORD: ${VIDSTREAM_DB_PASSWORD:?}
 
-x-ls-dev-env: &ls-dev-env
-  DJANGO_DB: default
-  POSTGRE_HOST: postgres
-  POSTGRE_PORT: "5432"
-  POSTGRE_NAME: ls_dev
-  POSTGRE_USER: ls_dev
-  POSTGRE_PASSWORD: ${LS_DEV_DB_PASSWORD:?}
-  SECRET_KEY: ${LS_DEV_SECRET_KEY:?}
-  LOCAL_FILES_SERVING_ENABLED: "true"
-  LOCAL_FILES_DOCUMENT_ROOT: /label-studio/files
-  LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK: "true"
-  # No bundled nginx: uwsgi serves static and clip files (Range) itself.
-  USE_NGINX_FOR_UPLOADS: "false"
-  UWSGI_PROCESSES: "2"
+x-ls-dev: &ls-dev
+  image: vidstream-label-studio:1.23.2
+  environment:
+    DJANGO_DB: default
+    POSTGRE_HOST: postgres
+    POSTGRE_PORT: "5432"
+    POSTGRE_NAME: ls_dev
+    POSTGRE_USER: ls_dev
+    POSTGRE_PASSWORD: ${LS_DEV_DB_PASSWORD:?}
+    SECRET_KEY: ${LS_DEV_SECRET_KEY:?}
+    LOCAL_FILES_SERVING_ENABLED: "true"
+    LOCAL_FILES_DOCUMENT_ROOT: /label-studio/files
+    LABEL_STUDIO_HOST: https://dev.${VIDSTREAM_DOMAIN:?}
+    LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK: "true"
+    # No bundled nginx: uwsgi serves static and clip files (Range) itself.
+    USE_NGINX_FOR_UPLOADS: "false"
+    UWSGI_PROCESSES: "2"
 
 services:
   postgres:
@@ -61,21 +64,22 @@ services:
       <<: *server-env
       VIDSTREAM_ROLE: worker
 
+  # Builds the patched image (never pulled; it exists only locally) before any container starts.
   ls-dev-migrate:
+    <<: *ls-dev
     build: ./label-studio
-    image: vidstream-label-studio:1.23.2
+    pull_policy: build
     command: label-studio-migrate
-    environment: *ls-dev-env
     depends_on:
       postgres:
         condition: service_healthy
 
   ls-dev:
-    image: vidstream-label-studio:1.23.2
+    <<: *ls-dev
+    pull_policy: never
     command: label-studio-uwsgi
     restart: unless-stopped
     env_file: ./label-studio/ssrf.env
-    environment: *ls-dev-env
     volumes:
       - ls-dev:/label-studio/data
     networks: [default, hooks]
@@ -86,6 +90,22 @@ services:
       # 127.0.0.1, not localhost: uwsgi listens on IPv4 only.
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8000/health"]
       start_period: 90s
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      VIDSTREAM_DOMAIN: ${VIDSTREAM_DOMAIN:?}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [web, ls-dev]
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:2019/config/"]
 
 networks:
   # Webhooks from Label Studio reach web only here; ssrf.env bans every other private range.
@@ -98,3 +118,4 @@ networks:
 volumes:
   postgres:
   ls-dev:
+  caddy-data:

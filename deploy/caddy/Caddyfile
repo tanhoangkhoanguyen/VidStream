@@ -1,0 +1,14 @@
+{$VIDSTREAM_DOMAIN} {
+	handle /internal/* {
+		respond 404
+	}
+	reverse_proxy web:8080
+}
+
+# Every request, including clip Range requests, passes the gate first; only a 2xx reaches Label Studio.
+dev.{$VIDSTREAM_DOMAIN} {
+	forward_auth web:8080 {
+		uri /internal/gate
+	}
+	reverse_proxy ls-dev:8000
+}
