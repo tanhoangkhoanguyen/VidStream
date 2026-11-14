@@ -55,8 +55,8 @@ tasks.test {
   exclude("**/*IT.class")
 }
 
-val integrationTest by
-  tasks.registering(Test::class) {
+val integrationTest =
+  tasks.register<Test>("integrationTest") {
     description = "Runs *IT tests against containers."
     group = "verification"
     testClassesDirs = sourceSets.test.get().output.classesDirs
