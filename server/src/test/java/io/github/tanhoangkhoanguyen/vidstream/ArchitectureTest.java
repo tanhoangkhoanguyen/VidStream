@@ -14,10 +14,5 @@ class ArchitectureTest {
 
   @ArchTest
   static final ArchRule noPackageCycles =
-      slices()
-          .matching("io.github.tanhoangkhoanguyen.vidstream.(*)..")
-          .should()
-          .beFreeOfCycles()
-          // No sub-packages yet; drop once the server skeleton adds them.
-          .allowEmptyShould(true);
+      slices().matching("io.github.tanhoangkhoanguyen.vidstream.(*)..").should().beFreeOfCycles();
 }

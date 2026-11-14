@@ -1,6 +1,9 @@
 spring:
   application:
     name: vidstream
+  profiles:
+    # Role = profile (web or worker). Startup fails when vidstream.role is unset.
+    active: ${vidstream.role}
   threads:
     virtual:
       enabled: true

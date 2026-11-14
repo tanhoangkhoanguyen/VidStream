@@ -9,7 +9,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 
-@SpringBootTest
+@SpringBootTest(properties = "vidstream.role=web")
 @AutoConfigureMockMvc
 @Import(PostgresTestConfig.class)
 class HealthTest {
