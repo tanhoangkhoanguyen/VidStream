@@ -1,0 +1,13 @@
+# Local overlay: build the server from source (run ./gradlew bootJar first).
+#   docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up -d --wait
+services:
+  web:
+    build: ../server
+    pull_policy: build
+
+  worker:
+    pull_policy: never
+
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"

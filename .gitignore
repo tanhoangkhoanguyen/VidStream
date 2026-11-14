@@ -11,6 +11,10 @@
 # Local scratch
 tmp/
 
+# Gradle
+.gradle/
+build/
+
 # IDE / OS
 .idea/
 .vscode/

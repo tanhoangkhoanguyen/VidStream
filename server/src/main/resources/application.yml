@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: vidstream
+  profiles:
+    # Role = profile (web or worker). Startup fails when vidstream.role is unset.
+    active: ${vidstream.role}
+  datasource:
+    hikari:
+      # Virtual threads are unbounded; the pool caps concurrent DB work.
+      maximum-pool-size: 10
+  threads:
+    virtual:
+      enabled: true
+logging:
+  structured:
+    format:
+      console: ecs
+management:
+  server:
+    # Internal only: the proxy routes the app port, never this one.
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
