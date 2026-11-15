@@ -16,6 +16,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.client.RestTestClient;
 
@@ -109,6 +110,25 @@ class WebRoleIT {
   @Test
   void logoutNeedsCsrf() {
     assertThat(mvc.post().uri("/logout").with(oauth2Login())).hasStatus(HttpStatus.FORBIDDEN);
+  }
+
+  MockMvcTester.MockMvcRequestBuilder gate(String host) {
+    return mvc.get().uri("https://" + host + "/internal/gate");
+  }
+
+  @Test
+  void gateLetsMembersIntoTheirDatasetsOnly() {
+    var member = oauth2Login().authorities(new SimpleGrantedAuthority("DATASET_a"));
+    assertThat(gate("a.vidstream.test").with(member)).hasStatus(HttpStatus.OK);
+    assertThat(gate("A.Vidstream.Test").with(member)).hasStatus(HttpStatus.OK);
+    assertThat(gate("b.vidstream.test").with(member)).hasStatus(HttpStatus.UNAUTHORIZED);
+    assertThat(gate("a.other.test").with(member)).hasStatus(HttpStatus.UNAUTHORIZED);
+    assertThat(gate("vidstream.test").with(member)).hasStatus(HttpStatus.UNAUTHORIZED);
+  }
+
+  @Test
+  void gateRejectsNoSession() {
+    assertThat(gate("a.vidstream.test")).hasStatus(HttpStatus.UNAUTHORIZED);
   }
 
   @Test

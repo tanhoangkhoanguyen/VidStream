@@ -8,9 +8,12 @@ import org.springframework.core.io.Resource;
  *
  * @param datasetsFile {@code datasets.yml}, e.g. {@code file:/app/datasets.yml}; web role only
  * @param tokenKey base64 of 32 random bytes; encrypts Box tokens at rest
+ * @param domain public host of VidStream; dataset {@code x} lives on {@code x.<domain>}; web role
+ *     only
  */
 @ConfigurationProperties("vidstream")
-public record VidStreamProperties(Role role, Resource datasetsFile, String tokenKey) {
+public record VidStreamProperties(
+    Role role, Resource datasetsFile, String tokenKey, String domain) {
 
   public enum Role {
     WEB,

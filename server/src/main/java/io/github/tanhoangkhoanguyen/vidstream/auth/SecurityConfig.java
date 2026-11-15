@@ -18,6 +18,9 @@ class SecurityConfig {
     return http.authorizeHttpRequests(a ->
             a.requestMatchers(EndpointRequest.toAnyEndpoint())
                 .permitAll()
+                // Answers 401 itself: a redirect to sign-in would land on the dataset host.
+                .requestMatchers(GateController.PATH)
+                .permitAll()
                 .anyRequest()
                 .authenticated())
         .oauth2Login(Customizer.withDefaults())
