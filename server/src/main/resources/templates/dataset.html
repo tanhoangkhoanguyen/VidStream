@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title th:text="${name} + ' · VidStream'">VidStream</title>
+</head>
+<body>
+<p><a th:href="@{/}">All datasets</a></p>
+<h1 th:text="${name}">dataset</h1>
+<p><a th:href="${labelStudio}">Label in Label Studio</a></p>
+</body>
+</html>

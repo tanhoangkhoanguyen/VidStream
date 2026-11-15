@@ -127,6 +127,29 @@ class WebRoleIT {
   }
 
   @Test
+  void pagesShowOnlyMemberDatasets() {
+    var member = oauth2Login().authorities(DatasetAuthorities.of("a"));
+    assertThat(mvc.get().uri("/").with(member))
+        .hasStatusOk()
+        .bodyText()
+        .contains("href=\"/datasets/a\"", "name=\"_csrf\"")
+        .doesNotContain("/datasets/b");
+    assertThat(mvc.get().uri("/datasets/a").with(member))
+        .hasStatusOk()
+        .bodyText()
+        .contains("href=\"https://a.vidstream.test/\"");
+    assertThat(mvc.get().uri("/datasets/b").with(member)).hasStatus(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void homeExplainsNoDatasets() {
+    assertThat(mvc.get().uri("/").with(oauth2Login()))
+        .hasStatusOk()
+        .bodyText()
+        .contains("cannot read any dataset folder");
+  }
+
+  @Test
   void gateRejectsNoSession() {
     assertThat(gate("a.vidstream.test")).hasStatus(HttpStatus.UNAUTHORIZED);
   }

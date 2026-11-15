@@ -34,6 +34,7 @@ dependencies {
   implementation(platform(libs.spring.boot.bom))
   implementation(libs.spring.boot.starter.webmvc)
   implementation(libs.spring.boot.starter.actuator)
+  implementation(libs.spring.boot.starter.thymeleaf)
   implementation(libs.spring.boot.starter.security.oauth2.client)
   implementation(libs.spring.boot.starter.restclient)
   implementation(libs.spring.boot.starter.flyway)
