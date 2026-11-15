@@ -1,15 +1,22 @@
 package io.github.tanhoangkhoanguyen.vidstream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.oauth2Login;
 
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
+import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.client.RestTestClient;
 
 @SpringBootTest(
@@ -19,8 +26,11 @@ import org.springframework.test.web.servlet.client.RestTestClient;
       "vidstream.datasets-file=classpath:datasets.yml",
       "management.server.port=0"
     })
+@AutoConfigureMockMvc
 @Import(PostgresTestConfig.class)
 class WebRoleIT {
+
+  @Autowired MockMvcTester mvc;
 
   @LocalServerPort int port;
 
@@ -81,6 +91,31 @@ class WebRoleIT {
                 assertThat(location)
                     .startsWith("https://account.box.com/api/oauth2/authorize?")
                     .contains("client_id=test-client", "state=")
-                    .contains("redirect_uri=http://localhost:" + port + "/login/oauth2/code/box"));
+                    .contains("redirect_uri=http://localhost:" + port + "/login/oauth2/code/box"))
+        .expectHeader()
+        .value(
+            "Set-Cookie",
+            cookie ->
+                assertThat(cookie)
+                    .startsWith("vs_session=")
+                    .contains(
+                        "Max-Age=28800",
+                        "Domain=vidstream.test",
+                        "Secure",
+                        "HttpOnly",
+                        "SameSite=Lax"));
+  }
+
+  @Test
+  void logoutNeedsCsrf() {
+    assertThat(mvc.post().uri("/logout").with(oauth2Login())).hasStatus(HttpStatus.FORBIDDEN);
+  }
+
+  @Test
+  void logoutClearsSessionCookie() {
+    assertThat(mvc.post().uri("/logout").with(oauth2Login()).with(csrf()))
+        .hasStatus(HttpStatus.FOUND)
+        .cookies()
+        .hasMaxAge("vs_session", Duration.ZERO);
   }
 }

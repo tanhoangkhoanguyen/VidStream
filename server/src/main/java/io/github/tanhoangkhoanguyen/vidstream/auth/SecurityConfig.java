@@ -21,6 +21,8 @@ class SecurityConfig {
                 .anyRequest()
                 .authenticated())
         .oauth2Login(Customizer.withDefaults())
+        // POST with CSRF. Box tokens stay: workers still need them.
+        .logout(logout -> logout.deleteCookies("vs_session"))
         .build();
   }
 

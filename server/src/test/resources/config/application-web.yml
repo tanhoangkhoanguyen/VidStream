@@ -1,4 +1,6 @@
-# Test-only Box app credentials (overrides the BOX_CLIENT_* placeholders).
+# Test-only values for the web role's required settings.
+vidstream:
+  domain: vidstream.test
 spring:
   security:
     oauth2:
