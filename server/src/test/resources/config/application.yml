@@ -1,0 +1,3 @@
+# Test-only token key (32 zero bytes).
+vidstream:
+  token-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=

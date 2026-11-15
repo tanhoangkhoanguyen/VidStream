@@ -29,7 +29,7 @@ class DatasetSyncIT {
   void setUp() {
     sync =
         new DatasetSync(
-            jdbc, new VidStreamProperties(Role.WEB, new ByteArrayResource(new byte[0])));
+            jdbc, new VidStreamProperties(Role.WEB, new ByteArrayResource(new byte[0]), null));
   }
 
   List<String> rows() {
