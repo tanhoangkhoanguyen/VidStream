@@ -1,5 +1,6 @@
 package io.github.tanhoangkhoanguyen.vidstream.box;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
@@ -10,8 +11,13 @@ public class BoxClient {
 
   private final RestClient http;
 
+  @Autowired
   public BoxClient(RestClient.Builder builder, BoxProperties props) {
-    this.http = builder.baseUrl(props.apiUrl()).build();
+    this(builder, props, Thread::sleep);
+  }
+
+  BoxClient(RestClient.Builder builder, BoxProperties props, BoxRetry.Sleeper sleeper) {
+    this.http = builder.baseUrl(props.apiUrl()).requestInterceptor(new BoxRetry(sleeper)).build();
   }
 
   /** Whether the token's user can read the folder. Box answers 404 for both no access and none. */
