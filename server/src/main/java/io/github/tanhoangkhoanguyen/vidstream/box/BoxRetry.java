@@ -11,7 +11,9 @@ import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
 
-/** Retries 429 after {@code Retry-After} and 5xx with jittered backoff, at most 3 times. */
+/**
+ * Retries 429 after {@code Retry-After} and 5xx with jittered backoff, {@link #MAX_RETRIES} times.
+ */
 final class BoxRetry implements ClientHttpRequestInterceptor {
 
   static final int MAX_RETRIES = 2;

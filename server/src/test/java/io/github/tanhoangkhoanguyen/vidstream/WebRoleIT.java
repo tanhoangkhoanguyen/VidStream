@@ -1,6 +1,10 @@
 package io.github.tanhoangkhoanguyen.vidstream;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.web.server.LocalManagementPort;
@@ -40,11 +44,43 @@ class WebRoleIT {
         .isEqualTo("UP");
     management.get().uri("/actuator/info").exchange().expectStatus().isOk();
     management.get().uri("/actuator/prometheus").exchange().expectStatus().isOk();
-    management.get().uri("/actuator/env").exchange().expectStatus().isNotFound();
+    // Not exposed: falls through to sign-in.
+    management
+        .get()
+        .uri("/actuator/env")
+        .exchange()
+        .expectStatus()
+        .value(status -> assertThat(status).isNotEqualTo(200));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"/", "/actuator/health"})
+  void anonymousIsSentToBoxSignIn(String path) {
+    client(port)
+        .get()
+        .uri(path)
+        .exchange()
+        .expectStatus()
+        .isFound()
+        .expectHeader()
+        .location("http://localhost:" + port + "/oauth2/authorization/box");
   }
 
   @Test
-  void appPortHasNoActuator() {
-    client(port).get().uri("/actuator/health").exchange().expectStatus().isNotFound();
+  void signInRedirectsToBoxConsent() {
+    client(port)
+        .get()
+        .uri("/oauth2/authorization/box")
+        .exchange()
+        .expectStatus()
+        .isFound()
+        .expectHeader()
+        .value(
+            "Location",
+            location ->
+                assertThat(location)
+                    .startsWith("https://account.box.com/api/oauth2/authorize?")
+                    .contains("client_id=test-client", "state=")
+                    .contains("redirect_uri=http://localhost:" + port + "/login/oauth2/code/box"));
   }
 }

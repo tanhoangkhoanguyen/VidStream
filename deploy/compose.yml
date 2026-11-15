@@ -54,6 +54,8 @@ services:
       <<: *server-env
       VIDSTREAM_ROLE: web
       VIDSTREAM_DATASETSFILE: file:/app/datasets.yml
+      BOX_CLIENT_ID: ${BOX_CLIENT_ID:?}
+      BOX_CLIENT_SECRET: ${BOX_CLIENT_SECRET:?}
     volumes:
       - ./datasets.yml:/app/datasets.yml:ro
     networks:

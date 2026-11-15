@@ -1,0 +1,9 @@
+# Test-only Box app credentials (overrides the BOX_CLIENT_* placeholders).
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          box:
+            client-id: test-client
+            client-secret: test-secret
