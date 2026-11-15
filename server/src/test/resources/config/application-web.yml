@@ -1,11 +1,3 @@
 # Test-only values for the web role's required settings.
 vidstream:
   domain: vidstream.test
-spring:
-  security:
-    oauth2:
-      client:
-        registration:
-          box:
-            client-id: test-client
-            client-secret: test-secret

@@ -1,3 +1,11 @@
-# Test-only token key (32 zero bytes).
+# Test-only values for both roles (token key: 32 zero bytes).
 vidstream:
   token-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          box:
+            client-id: test-client
+            client-secret: test-secret
