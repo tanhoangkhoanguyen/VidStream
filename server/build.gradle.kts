@@ -35,6 +35,7 @@ dependencies {
   implementation(libs.spring.boot.starter.webmvc)
   implementation(libs.spring.boot.starter.actuator)
   implementation(libs.spring.boot.starter.flyway)
+  implementation(libs.jackson.dataformat.yaml)
   runtimeOnly(libs.micrometer.registry.prometheus)
   runtimeOnly(libs.flyway.database.postgresql)
   runtimeOnly(libs.postgresql)
