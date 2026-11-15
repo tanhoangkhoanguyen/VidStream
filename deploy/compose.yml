@@ -53,6 +53,9 @@ services:
     environment:
       <<: *server-env
       VIDSTREAM_ROLE: web
+      VIDSTREAM_DATASETSFILE: file:/app/datasets.yml
+    volumes:
+      - ./datasets.yml:/app/datasets.yml:ro
     networks:
       default:
       hooks:

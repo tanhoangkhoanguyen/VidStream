@@ -10,7 +10,11 @@ import org.springframework.test.web.servlet.client.RestTestClient;
 
 @SpringBootTest(
     webEnvironment = WebEnvironment.RANDOM_PORT,
-    properties = {"vidstream.role=web", "management.server.port=0"})
+    properties = {
+      "vidstream.role=web",
+      "vidstream.datasets-file=classpath:datasets.yml",
+      "management.server.port=0"
+    })
 @Import(PostgresTestConfig.class)
 class WebRoleIT {
 
