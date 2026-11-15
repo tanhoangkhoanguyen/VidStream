@@ -7,12 +7,14 @@ import io.github.tanhoangkhoanguyen.vidstream.PostgresTestConfig;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jdbc.test.autoconfigure.JdbcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -45,9 +47,13 @@ class BoxAuthorizedClientServiceIT {
             jdbc, new TokenCipher(new byte[32]), new InMemoryClientRegistrationRepository(BOX));
   }
 
-  void signIn(String login, String access, String refresh, Instant expires) {
-    var user = new DefaultOAuth2User(List.of(), Map.of("id", "42", "login", login), "id");
-    var principal = new OAuth2AuthenticationToken(user, List.of(), "box");
+  void signIn(String login, String access, String refresh, Instant expires, String... datasets) {
+    var authorities =
+        Stream.of(datasets)
+            .map(d -> new SimpleGrantedAuthority(BoxUserService.DATASET + d))
+            .toList();
+    var user = new DefaultOAuth2User(authorities, Map.of("id", "42", "login", login), "id");
+    var principal = new OAuth2AuthenticationToken(user, authorities, "box");
     var client =
         new OAuth2AuthorizedClient(
             BOX,
@@ -83,6 +89,41 @@ class BoxAuthorizedClientServiceIT {
         .containsExactly("new@usf.edu");
     OAuth2AuthorizedClient loaded = service.loadAuthorizedClient("box", "42");
     assertThat(loaded.getRefreshToken().getTokenValue()).isEqualTo("refresh-2");
+  }
+
+  void dataset(String name, String folder) {
+    jdbc.sql(
+            "INSERT INTO datasets (name, box_folder_id, clip_seconds, min_last_clip_seconds, fps,"
+                + " chunk_clips) VALUES (?, ?, 12, 5, 30, 50)")
+        .params(name, folder)
+        .update();
+  }
+
+  List<String> members() {
+    return jdbc.sql(
+            "SELECT d.name FROM dataset_members m JOIN datasets d ON d.id = m.dataset_id"
+                + " ORDER BY d.name")
+        .query(String.class)
+        .list();
+  }
+
+  @Test
+  void signInReplacesActiveMemberships() {
+    dataset("a", "1");
+    dataset("b", "2");
+    dataset("c", "3");
+    var expires = Instant.now().plusSeconds(3600);
+
+    signIn("a@usf.edu", "access-1", "refresh-1", expires, "b", "c");
+    assertThat(members()).containsExactly("b", "c");
+
+    // Lost b, gained a; c went inactive, so it was not checked and stays.
+    jdbc.sql("UPDATE datasets SET active = false WHERE name = 'c'").update();
+    signIn("a@usf.edu", "access-2", "refresh-2", expires, "a");
+    assertThat(members()).containsExactly("a", "c");
+
+    signIn("a@usf.edu", "access-3", "refresh-3", expires);
+    assertThat(members()).containsExactly("c");
   }
 
   @Test
