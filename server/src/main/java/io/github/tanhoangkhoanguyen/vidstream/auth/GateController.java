@@ -35,8 +35,8 @@ class GateController {
   ResponseEntity<Void> gate(HttpServletRequest request, Authentication auth) {
     var host = request.getServerName().toLowerCase(Locale.ROOT);
     if (auth == null || !host.endsWith(suffix)) return status(false);
-    var authority = BoxUserService.DATASET + host.substring(0, host.length() - suffix.length());
-    return status(auth.getAuthorities().stream().anyMatch(a -> authority.equals(a.getAuthority())));
+    var dataset = host.substring(0, host.length() - suffix.length());
+    return status(DatasetAuthorities.names(auth).contains(dataset));
   }
 
   private static ResponseEntity<Void> status(boolean allowed) {

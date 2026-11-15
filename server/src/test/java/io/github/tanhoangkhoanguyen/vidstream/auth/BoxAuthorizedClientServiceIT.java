@@ -14,7 +14,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jdbc.test.autoconfigure.JdbcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -48,10 +47,7 @@ class BoxAuthorizedClientServiceIT {
   }
 
   void signIn(String login, String access, String refresh, Instant expires, String... datasets) {
-    var authorities =
-        Stream.of(datasets)
-            .map(d -> new SimpleGrantedAuthority(BoxUserService.DATASET + d))
-            .toList();
+    var authorities = Stream.of(datasets).map(DatasetAuthorities::of).toList();
     var user = new DefaultOAuth2User(authorities, Map.of("id", "42", "login", login), "id");
     var principal = new OAuth2AuthenticationToken(user, authorities, "box");
     var client =

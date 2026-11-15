@@ -6,7 +6,6 @@ import java.time.OffsetDateTime;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
@@ -65,12 +64,7 @@ class BoxAuthorizedClientService implements OAuth2AuthorizedClientService {
 
   /** Active datasets match the sign-in check; inactive ones were not checked, so they stay. */
   private void saveMembership(long userId, Authentication principal) {
-    var datasets =
-        principal.getAuthorities().stream()
-            .map(GrantedAuthority::getAuthority)
-            .filter(a -> a.startsWith(BoxUserService.DATASET))
-            .map(a -> a.substring(BoxUserService.DATASET.length()))
-            .toArray(String[]::new);
+    var datasets = DatasetAuthorities.names(principal).toArray(String[]::new);
     jdbc.sql(
             """
             DELETE FROM dataset_members m USING datasets d

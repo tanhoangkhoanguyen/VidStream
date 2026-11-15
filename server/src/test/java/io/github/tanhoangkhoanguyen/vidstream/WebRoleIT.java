@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.oauth2Login;
 
+import io.github.tanhoangkhoanguyen.vidstream.auth.DatasetAuthorities;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -16,7 +17,6 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.client.RestTestClient;
 
@@ -118,7 +118,7 @@ class WebRoleIT {
 
   @Test
   void gateLetsMembersIntoTheirDatasetsOnly() {
-    var member = oauth2Login().authorities(new SimpleGrantedAuthority("DATASET_a"));
+    var member = oauth2Login().authorities(DatasetAuthorities.of("a"));
     assertThat(gate("a.vidstream.test").with(member)).hasStatus(HttpStatus.OK);
     assertThat(gate("A.Vidstream.Test").with(member)).hasStatus(HttpStatus.OK);
     assertThat(gate("b.vidstream.test").with(member)).hasStatus(HttpStatus.UNAUTHORIZED);

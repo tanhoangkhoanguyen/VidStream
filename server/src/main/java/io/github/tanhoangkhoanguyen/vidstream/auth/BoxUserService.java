@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
@@ -19,14 +18,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 
 /**
- * Sign-in user: the Box profile plus a {@code DATASET_<name>} authority per readable dataset. The
+ * Sign-in user: the Box profile plus one {@link DatasetAuthorities} entry per readable dataset. The
  * session keeps them, so access is checked once per sign-in.
  */
 @Service
 @Profile("web")
 class BoxUserService implements OAuth2UserService<OAuth2UserRequest, OAuth2User> {
-
-  static final String DATASET = "DATASET_";
 
   private static final Logger log = LoggerFactory.getLogger(BoxUserService.class);
 
@@ -51,7 +48,7 @@ class BoxUserService implements OAuth2UserService<OAuth2UserRequest, OAuth2User>
     try {
       datasets
           .readableBy(request.getAccessToken().getTokenValue())
-          .forEach(name -> authorities.add(new SimpleGrantedAuthority(DATASET + name)));
+          .forEach(name -> authorities.add(DatasetAuthorities.of(name)));
     } catch (RestClientException e) {
       // Fail sign-in: a partial check would hide datasets the user can read.
       log.warn("Box dataset check failed at sign-in", e);
