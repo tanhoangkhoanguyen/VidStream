@@ -1,12 +1,15 @@
 package io.github.tanhoangkhoanguyen.vidstream.auth;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
+import static com.github.tomakehurst.wiremock.client.WireMock.jsonResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import io.github.tanhoangkhoanguyen.vidstream.PostgresTestConfig;
@@ -28,6 +31,7 @@ import org.springframework.security.oauth2.client.endpoint.RestClientRefreshToke
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -122,5 +126,41 @@ class TokenVaultIT {
             .query(byte[].class)
             .single();
     assertThat(cipher.decrypt(refresh)).isEqualTo("refresh-2");
+  }
+
+  boolean hasTokens(long id) {
+    return jdbc.sql("SELECT refresh_token_enc IS NOT NULL FROM users WHERE id = ?")
+        .param(id)
+        .query(Boolean.class)
+        .single();
+  }
+
+  @Test
+  void rejectedRefreshTokenIsCleared() {
+    long id = user(Duration.ZERO);
+    box.stubFor(
+        post("/token")
+            .willReturn(
+                jsonResponse(
+                    """
+                    {"error": "invalid_grant", "error_description": "Refresh token has expired"}\
+                    """,
+                    400)));
+
+    assertThatThrownBy(() -> vault.accessToken(id)).isInstanceOf(SignInRequiredException.class);
+    assertThat(hasTokens(id)).isFalse();
+    // Cleared: the next call fails without asking Box.
+    assertThatThrownBy(() -> vault.accessToken(id)).isInstanceOf(SignInRequiredException.class);
+    box.verify(1, postRequestedFor(urlPathEqualTo("/token")));
+  }
+
+  @Test
+  void boxErrorKeepsTokens() {
+    long id = user(Duration.ZERO);
+    box.stubFor(post("/token").willReturn(aResponse().withStatus(503)));
+
+    assertThatThrownBy(() -> vault.accessToken(id))
+        .isInstanceOf(OAuth2AuthorizationException.class);
+    assertThat(hasTokens(id)).isTrue();
   }
 }

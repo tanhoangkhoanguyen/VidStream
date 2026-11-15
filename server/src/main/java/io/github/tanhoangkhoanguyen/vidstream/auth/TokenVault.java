@@ -4,6 +4,8 @@ import static java.time.ZoneOffset.UTC;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AccessTokenResponseClient;
@@ -12,6 +14,8 @@ import org.springframework.security.oauth2.client.endpoint.RestClientRefreshToke
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.OAuth2RefreshToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -23,6 +27,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Service
 public class TokenVault {
+
+  private static final Logger log = LoggerFactory.getLogger(TokenVault.class);
 
   /** A token is refreshed once less than this is left. */
   static final Duration MIN_VALIDITY = Duration.ofMinutes(5);
@@ -62,24 +68,47 @@ public class TokenVault {
 
   private record Stored(byte[] refresh, byte[] access, OffsetDateTime expiresAt) {}
 
-  /** Holds a DB connection during the refresh call; refreshes are rare (about once an hour). */
+  /**
+   * Holds a DB connection during the refresh call; refreshes are rare (about once an hour). Other
+   * refresh errors (Box 5xx, network) are thrown and keep the stored tokens.
+   *
+   * @throws SignInRequiredException the user has no usable token; try another member
+   */
   public String accessToken(long userId) {
-    return tx.execute(status -> {
-      var stored =
-          jdbc.sql(
-                  "SELECT refresh_token_enc, access_token_enc, access_expires_at FROM users"
-                      + " WHERE id = ? FOR UPDATE")
-              .param(userId)
-              .query((rs, i) ->
-                  new Stored(rs.getBytes(1), rs.getBytes(2), rs.getObject(3, OffsetDateTime.class)))
-              .optional()
-              .orElseThrow(() -> new IllegalArgumentException("no user " + userId));
-      if (stored.access() == null) throw new IllegalStateException("user has no Box token");
-      if (stored.expiresAt().isAfter(OffsetDateTime.now().plus(MIN_VALIDITY)))
-        return cipher.decrypt(stored.access());
-      if (stored.refresh() == null) throw new IllegalStateException("user has no refresh token");
+    // Committed before throwing, so a rejected token is cleared for good.
+    var token = tx.execute(status -> lockedAccessToken(userId));
+    if (token == null) throw new SignInRequiredException(userId);
+    return token;
+  }
+
+  /** Null when the user must sign in again. */
+  private String lockedAccessToken(long userId) {
+    var stored =
+        jdbc.sql(
+                "SELECT refresh_token_enc, access_token_enc, access_expires_at FROM users"
+                    + " WHERE id = ? FOR UPDATE")
+            .param(userId)
+            .query((rs, i) ->
+                new Stored(rs.getBytes(1), rs.getBytes(2), rs.getObject(3, OffsetDateTime.class)))
+            .optional()
+            .orElseThrow(() -> new IllegalArgumentException("no user " + userId));
+    if (stored.access() == null) return null;
+    if (stored.expiresAt().isAfter(OffsetDateTime.now().plus(MIN_VALIDITY)))
+      return cipher.decrypt(stored.access());
+    if (stored.refresh() == null) return null;
+    try {
       return refresh(userId, stored);
-    });
+    } catch (OAuth2AuthorizationException e) {
+      // invalid_grant: revoked, or unused for 60 days.
+      if (!OAuth2ErrorCodes.INVALID_GRANT.equals(e.getError().getErrorCode())) throw e;
+      log.warn("Box rejected the refresh token of user {}; tokens cleared", userId);
+      jdbc.sql(
+              "UPDATE users SET refresh_token_enc = NULL, access_token_enc = NULL,"
+                  + " access_expires_at = NULL WHERE id = ?")
+          .param(userId)
+          .update();
+      return null;
+    }
   }
 
   private String refresh(long userId, Stored stored) {
