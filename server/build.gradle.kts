@@ -34,6 +34,7 @@ dependencies {
   implementation(platform(libs.spring.boot.bom))
   implementation(libs.spring.boot.starter.webmvc)
   implementation(libs.spring.boot.starter.actuator)
+  implementation(libs.spring.boot.starter.restclient)
   implementation(libs.spring.boot.starter.flyway)
   implementation(libs.jackson.dataformat.yaml)
   runtimeOnly(libs.micrometer.registry.prometheus)
@@ -45,6 +46,7 @@ dependencies {
   testImplementation(libs.spring.boot.testcontainers)
   testImplementation(libs.testcontainers.postgresql)
   testImplementation(libs.archunit.junit5)
+  testImplementation(libs.wiremock.standalone)
   testRuntimeOnly(libs.junit.platform.launcher)
 }
 
