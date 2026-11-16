@@ -137,7 +137,8 @@ class WebRoleIT {
     assertThat(mvc.get().uri("/datasets/a").with(member))
         .hasStatusOk()
         .bodyText()
-        .contains("href=\"https://a.vidstream.test/\"", "action=\"/datasets/a/scan\"");
+        .contains(
+            "href=\"https://a.vidstream.test/\"", "action=\"/datasets/a/scan\"", "No videos yet");
     assertThat(mvc.get().uri("/datasets/b").with(member)).hasStatus(HttpStatus.NOT_FOUND);
   }
 

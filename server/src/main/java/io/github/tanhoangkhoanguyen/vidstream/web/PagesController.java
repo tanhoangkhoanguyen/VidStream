@@ -2,6 +2,7 @@ package io.github.tanhoangkhoanguyen.vidstream.web;
 
 import io.github.tanhoangkhoanguyen.vidstream.auth.DatasetAuthorities;
 import io.github.tanhoangkhoanguyen.vidstream.config.VidStreamProperties;
+import io.github.tanhoangkhoanguyen.vidstream.video.VideoCounts;
 import io.github.tanhoangkhoanguyen.vidstream.video.VideoScan;
 import java.util.Objects;
 import org.springframework.context.annotation.Profile;
@@ -22,10 +23,12 @@ class PagesController {
 
   private final String domain;
   private final VideoScan scan;
+  private final VideoCounts counts;
 
-  PagesController(VidStreamProperties props, VideoScan scan) {
+  PagesController(VidStreamProperties props, VideoScan scan, VideoCounts counts) {
     this.domain = Objects.requireNonNull(props.domain(), "vidstream.domain is not set");
     this.scan = scan;
+    this.counts = counts;
   }
 
   @GetMapping("/")
@@ -39,6 +42,7 @@ class PagesController {
     requireMember(name, auth);
     model.addAttribute("name", name);
     model.addAttribute("labelStudio", "https://" + name + "." + domain + "/");
+    model.addAttribute("videos", counts.byStatus(name));
     return "dataset";
   }
 
