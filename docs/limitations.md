@@ -6,3 +6,5 @@
 - **Clips are temporary.** They are deleted once a video is fully labeled; they can be regenerated from Box (#144).
 - **One Box app owner.** The Box OAuth app belongs to one USF account. If that account ends, sign-in and processing stop until the app is handed over (#143).
 - **Box API calls are billed to USF's Box plan.** Volume is small: folder listings and ranged downloads.
+- **Deletions in Box are not followed.** A rescan only adds videos. A video deleted from Box stays registered; its jobs fail after 3 attempts.
+- **A duplicate stays a duplicate.** A file with the same content as an earlier one is never clipped, even if the earlier copy later fails or is deleted from Box.
