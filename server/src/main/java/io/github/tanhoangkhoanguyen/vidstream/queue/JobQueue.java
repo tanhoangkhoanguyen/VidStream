@@ -2,7 +2,9 @@ package io.github.tanhoangkhoanguyen.vidstream.queue;
 
 import java.time.Duration;
 import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -18,6 +20,12 @@ public class JobQueue {
 
   /** Claims per job, crashed attempts included: 1 try + 2 retries. */
   static final int MAX_ATTEMPTS = 3;
+
+  /** A failed attempt is retried after this. */
+  static final Duration RETRY_DELAY = Duration.ofMinutes(1);
+
+  // Download URLs carry access tokens; they never reach the database.
+  private static final Pattern URL = Pattern.compile("\\S+://\\S+");
 
   public enum Type {
     PROBE,
@@ -88,5 +96,57 @@ public class JobQueue {
       // Null: the job was failed instead; try the next one.
       if (rows.getFirst() != null) return Optional.of(rows.getFirst());
     }
+  }
+
+  /** Extends the lease; call every {@link #LEASE}/3. */
+  public void heartbeat(Job job) {
+    transition(
+        job,
+        "lease_until = now() + :leaseMs * interval '1 millisecond'",
+        Map.of("leaseMs", LEASE.toMillis()));
+  }
+
+  /** Retries the job after {@link #RETRY_DELAY}, or fails it on the last attempt. */
+  public void fail(Job job, Throwable cause) {
+    transition(
+        job,
+        """
+        status = CASE WHEN attempts < :maxAttempts THEN 'PENDING' ELSE 'FAILED' END,
+        run_after = now() + :delayMs * interval '1 millisecond', last_error = :error\
+        """,
+        Map.of(
+            "maxAttempts", MAX_ATTEMPTS,
+            "delayMs", RETRY_DELAY.toMillis(),
+            "error", sanitize(cause)));
+  }
+
+  /** Gives the job back without counting the attempt, e.g. on shutdown or with no usable token. */
+  public void release(Job job, Duration delay) {
+    transition(
+        job,
+        "status = 'PENDING', attempts = attempts - 1,"
+            + " run_after = now() + :delayMs * interval '1 millisecond'",
+        Map.of("delayMs", delay.toMillis()));
+  }
+
+  /** Class and message, URLs removed, at most 300 chars. */
+  static String sanitize(Throwable cause) {
+    var message = cause.getMessage() == null ? "" : ": " + cause.getMessage();
+    var text = URL.matcher(cause.getClass().getSimpleName() + message).replaceAll("<url>");
+    return text.length() > 300 ? text.substring(0, 300) : text;
+  }
+
+  /** Applies {@code set} only while {@code job}'s lease is current. */
+  private void transition(Job job, String set, Map<String, ?> params) {
+    int rows =
+        jdbc.sql(
+                "UPDATE jobs SET "
+                    + set
+                    + " WHERE id = :id AND lease_version = :version AND status = 'LEASED'")
+            .param("id", job.id())
+            .param("version", job.leaseVersion())
+            .params(params)
+            .update();
+    if (rows == 0) throw new StaleLeaseException(job.id(), job.leaseVersion());
   }
 }

@@ -3,10 +3,13 @@ package io.github.tanhoangkhoanguyen.vidstream.queue;
 import static io.github.tanhoangkhoanguyen.vidstream.queue.JobQueue.Type.CHUNK;
 import static io.github.tanhoangkhoanguyen.vidstream.queue.JobQueue.Type.PROBE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.tanhoangkhoanguyen.vidstream.PostgresTestConfig;
 import io.github.tanhoangkhoanguyen.vidstream.queue.JobQueue.Job;
 import io.github.tanhoangkhoanguyen.vidstream.queue.JobQueue.Type;
+import java.io.IOException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,6 +65,13 @@ class JobQueueIT {
     return jdbc.sql("SELECT concat_ws(' ', status, worker_id, attempts) FROM jobs WHERE id = ?")
         .param(id)
         .query(String.class)
+        .single();
+  }
+
+  boolean check(long id, String condition) {
+    return jdbc.sql("SELECT " + condition + " FROM jobs WHERE id = ?")
+        .param(id)
+        .query(Boolean.class)
         .single();
   }
 
@@ -125,5 +135,57 @@ class JobQueueIT {
     assertThat(queue.claim("w1", List.of(CHUNK), List.of(dataset))).isEmpty();
     assertThat(queue.claim("w1", List.of(PROBE), List.of(dataset + 1))).isEmpty();
     assertThat(queue.claim("w1", List.of(PROBE), List.of())).isEmpty();
+  }
+
+  @Test
+  void heartbeatExtendsLease() {
+    var id = enqueue(CHUNK, 0);
+    var job = claim("w1").orElseThrow();
+    update("lease_until = now() + interval '1 second'");
+
+    queue.heartbeat(job);
+
+    assertThat(check(id, "lease_until = now() + interval '2 minutes'")).isTrue();
+  }
+
+  @Test
+  void failRetriesLaterThenFailsOnLastAttempt() {
+    var id = enqueue(CHUNK, 0);
+    for (int attempt = 1; attempt < JobQueue.MAX_ATTEMPTS; attempt++) {
+      queue.fail(claim("w1").orElseThrow(), new IOException("Box 503"));
+      assertThat(state(id)).isEqualTo("PENDING w1 " + attempt);
+      assertThat(check(id, "run_after = now() + interval '1 minute'")).isTrue();
+      update("run_after = now()");
+    }
+
+    queue.fail(claim("w1").orElseThrow(), new IOException("Box 503"));
+
+    assertThat(state(id)).isEqualTo("FAILED w1 " + JobQueue.MAX_ATTEMPTS);
+    assertThat(check(id, "last_error = 'IOException: Box 503'")).isTrue();
+  }
+
+  @Test
+  void releaseDoesNotCountTheAttempt() {
+    var id = enqueue(CHUNK, 0);
+    queue.release(claim("w1").orElseThrow(), Duration.ZERO);
+
+    assertThat(state(id)).isEqualTo("PENDING w1 0");
+    assertThat(claim("w2")).isPresent();
+  }
+
+  @Test
+  void staleWorkerChangesNothing() {
+    var id = enqueue(CHUNK, 0);
+    var stale = claim("w1").orElseThrow();
+    update("lease_until = now() - interval '1 second'");
+    claim("w2");
+
+    assertThatThrownBy(() -> queue.heartbeat(stale)).isInstanceOf(StaleLeaseException.class);
+    assertThatThrownBy(() -> queue.fail(stale, new IOException()))
+        .isInstanceOf(StaleLeaseException.class);
+    assertThatThrownBy(() -> queue.release(stale, Duration.ZERO))
+        .isInstanceOf(StaleLeaseException.class);
+    assertThat(state(id)).isEqualTo("LEASED w2 2");
+    assertThat(check(id, "lease_until = now() + interval '2 minutes'")).isTrue();
   }
 }
