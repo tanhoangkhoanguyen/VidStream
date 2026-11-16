@@ -31,19 +31,42 @@ class SchemaIT {
 
   @Autowired JdbcClient jdbc;
 
-  int insertDataset(Map<String, Object> overrides) {
+  long insertDataset(Map<String, Object> overrides) {
     var row = new LinkedHashMap<>(VALID);
     row.putAll(overrides);
     var columns = String.join(", ", row.keySet());
     var params = row.keySet().stream().map(c -> ":" + c).collect(joining(", "));
-    return jdbc.sql("INSERT INTO datasets (" + columns + ") VALUES (" + params + ")")
+    return jdbc.sql("INSERT INTO datasets (" + columns + ") VALUES (" + params + ") RETURNING id")
         .params(row)
+        .query(Long.class)
+        .single();
+  }
+
+  long insertVideo(long dataset, String fileId, String sha1, String status) {
+    return jdbc.sql(
+            "INSERT INTO videos (dataset_id, box_file_id, sha1, size_bytes, status)"
+                + " VALUES (?, ?, ?, 1, ?) RETURNING id")
+        .params(dataset, fileId, sha1, status)
+        .query(Long.class)
+        .single();
+  }
+
+  void insertJob(long video, String type, String payload) {
+    jdbc.sql(
+            "INSERT INTO jobs (type, dataset_id, video_id, payload)"
+                + " SELECT ?, dataset_id, id, ?::jsonb FROM videos WHERE id = ?")
+        .params(type, payload, video)
         .update();
+  }
+
+  // Postgres aborts the transaction on error, so a rejected insert must come last.
+  static void assertRejected(Runnable insert) {
+    assertThatThrownBy(insert::run).isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test
   void acceptsValidDataset() {
-    assertThat(insertDataset(Map.of())).isEqualTo(1);
+    assertThat(insertDataset(Map.of())).isPositive();
   }
 
   static Stream<Map<String, Object>> invalid() {
@@ -62,15 +85,51 @@ class SchemaIT {
   @ParameterizedTest
   @MethodSource("invalid")
   void rejectsInvalidDataset(Map<String, Object> override) {
-    assertThatThrownBy(() -> insertDataset(override))
-        .isInstanceOf(DataIntegrityViolationException.class);
+    assertRejected(() -> insertDataset(override));
   }
 
   @Test
   void rejectsAccessTokenWithoutExpiry() {
     var sql =
         "INSERT INTO users (box_user_id, login, access_token_enc) VALUES ('1', 'a@usf.edu', '\\x01')";
-    assertThatThrownBy(() -> jdbc.sql(sql).update())
-        .isInstanceOf(DataIntegrityViolationException.class);
+    assertRejected(() -> jdbc.sql(sql).update());
+  }
+
+  @Test
+  void rejectsSameFileTwice() {
+    var dataset = insertDataset(Map.of());
+    insertVideo(dataset, "1", "aa", "DISCOVERED");
+    assertRejected(() -> insertVideo(dataset, "1", "bb", "DISCOVERED"));
+  }
+
+  @Test
+  void rejectsSameContentUnlessDuplicate() {
+    var dataset = insertDataset(Map.of());
+    insertVideo(dataset, "1", "aa", "DISCOVERED");
+    insertVideo(dataset, "2", "aa", "DUPLICATE");
+    assertRejected(() -> insertVideo(dataset, "3", "aa", "DISCOVERED"));
+  }
+
+  @Test
+  void acceptsOneProbeAndEachChunkOnce() {
+    var video = insertVideo(insertDataset(Map.of()), "1", "aa", "DISCOVERED");
+    insertJob(video, "PROBE", "{}");
+    insertJob(video, "CHUNK", "{\"chunk\": 0}");
+    insertJob(video, "CHUNK", "{\"chunk\": 1}");
+    assertRejected(() -> insertJob(video, "PROBE", "{}"));
+  }
+
+  @Test
+  void rejectsSameChunkTwice() {
+    var video = insertVideo(insertDataset(Map.of()), "1", "aa", "DISCOVERED");
+    insertJob(video, "CHUNK", "{\"chunk\": 0}");
+    assertRejected(() -> insertJob(video, "CHUNK", "{\"chunk\": 0}"));
+  }
+
+  @Test
+  void rejectsLeaseWithoutExpiry() {
+    var video = insertVideo(insertDataset(Map.of()), "1", "aa", "DISCOVERED");
+    insertJob(video, "PROBE", "{}");
+    assertRejected(() -> jdbc.sql("UPDATE jobs SET status = 'LEASED'").update());
   }
 }
