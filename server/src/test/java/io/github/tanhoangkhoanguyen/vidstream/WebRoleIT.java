@@ -137,8 +137,19 @@ class WebRoleIT {
     assertThat(mvc.get().uri("/datasets/a").with(member))
         .hasStatusOk()
         .bodyText()
-        .contains("href=\"https://a.vidstream.test/\"");
+        .contains("href=\"https://a.vidstream.test/\"", "action=\"/datasets/a/scan\"");
     assertThat(mvc.get().uri("/datasets/b").with(member)).hasStatus(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void membersStartScansWithCsrf() {
+    var member = oauth2Login().authorities(DatasetAuthorities.of("a"));
+    assertThat(mvc.post().uri("/datasets/a/scan").with(member).with(csrf()))
+        .hasStatus(HttpStatus.FOUND)
+        .hasRedirectedUrl("/datasets/a");
+    assertThat(mvc.post().uri("/datasets/b/scan").with(member).with(csrf()))
+        .hasStatus(HttpStatus.NOT_FOUND);
+    assertThat(mvc.post().uri("/datasets/a/scan").with(member)).hasStatus(HttpStatus.FORBIDDEN);
   }
 
   @Test

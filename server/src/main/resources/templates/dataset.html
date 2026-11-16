@@ -8,6 +8,11 @@
 <body>
 <p><a th:href="@{/}">All datasets</a></p>
 <h1 th:text="${name}">dataset</h1>
+<p th:if="${notice}" th:text="${notice}">notice</p>
 <p><a th:href="${labelStudio}">Label in Label Studio</a></p>
+<!--/* Finds new videos in the Box folder; th:action adds the CSRF token. */-->
+<form th:action="@{/datasets/{name}/scan(name=${name})}" method="post">
+  <button type="submit">Scan Box folder</button>
+</form>
 </body>
 </html>
