@@ -61,9 +61,16 @@ public class MemberTokens {
         // Box ended the access token early: refresh once.
         vault.expire(user);
         token = vault.accessToken(user);
-        return Optional.of(call.apply(token));
+        try {
+          return Optional.of(call.apply(token));
+        } catch (HttpClientErrorException.Unauthorized again) {
+          // Rejected right after a refresh: the grant is unusable; fail closed.
+          log.warn("Box rejected a fresh token of user {}; tokens cleared", user);
+          vault.clear(user);
+          return Optional.empty();
+        }
       }
-    } catch (SignInRequiredException | HttpClientErrorException.Unauthorized e) {
+    } catch (SignInRequiredException e) {
       return Optional.empty();
     } catch (HttpClientErrorException.NotFound e) {
       // Box answers 404 for "no access" too: the dataset folder tells the two apart.

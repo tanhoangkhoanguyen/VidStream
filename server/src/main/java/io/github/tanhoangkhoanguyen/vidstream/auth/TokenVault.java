@@ -102,6 +102,15 @@ public class TokenVault {
         .update();
   }
 
+  /** Box rejects the user's grant: they must sign in again. */
+  public void clear(long userId) {
+    jdbc.sql(
+            "UPDATE users SET refresh_token_enc = NULL, access_token_enc = NULL,"
+                + " access_expires_at = NULL WHERE id = ?")
+        .param(userId)
+        .update();
+  }
+
   /** Null when the user must sign in again. */
   private String lockedAccessToken(long userId) {
     var stored =
@@ -123,11 +132,7 @@ public class TokenVault {
       // invalid_grant: revoked, or unused for 60 days.
       if (!OAuth2ErrorCodes.INVALID_GRANT.equals(e.getError().getErrorCode())) throw e;
       log.warn("Box rejected the refresh token of user {}; tokens cleared", userId);
-      jdbc.sql(
-              "UPDATE users SET refresh_token_enc = NULL, access_token_enc = NULL,"
-                  + " access_expires_at = NULL WHERE id = ?")
-          .param(userId)
-          .update();
+      clear(userId);
       return null;
     }
   }

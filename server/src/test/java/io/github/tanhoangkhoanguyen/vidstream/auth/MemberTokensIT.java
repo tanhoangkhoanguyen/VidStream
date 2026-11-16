@@ -141,6 +141,29 @@ class MemberTokensIT {
   }
 
   @Test
+  void clearsMemberRejectedAfterRefresh() {
+    long a = member("old");
+    member("b");
+
+    var used =
+        members.call(
+            dataset,
+            token -> {
+              if (!token.equals("b")) throw error(HttpStatus.UNAUTHORIZED);
+              return token;
+            });
+
+    assertThat(used).isEqualTo("b");
+    assertThat(refreshes).hasValue(1);
+    assertThat(
+            jdbc.sql("SELECT refresh_token_enc IS NULL FROM users WHERE id = ?")
+                .param(a)
+                .query(Boolean.class)
+                .single())
+        .isTrue();
+  }
+
+  @Test
   void removesMemberWhoLostAccess() {
     member("a");
     long b = member("b");
