@@ -6,7 +6,7 @@ What VidStream does when a dependency fails. **Fail-closed**: stop rather than r
 |---|---|---|---|---|
 | Box 429 | Wait | Honour `Retry-After` | Slower listing and clipping | #97 |
 | Box 5xx or unreachable | Retry, then fail | Bounded retries with jitter; a failed job attempt is retried later | Sign-in error; clipping pauses | #97 |
-| Dataset owner's Box token revoked or expired | Fail-closed | Owner marked disconnected; the dataset's jobs are released with backoff, not failed | Report: "owner must reconnect Box" | #96, #107 |
+| A member's Box token revoked or expired | Fail over, then fail-closed | Tokens cleared; workers use another member's token. No member left: the dataset's jobs are released with backoff, not failed | Report: "a member must sign in" | #96, #107 |
 | Download URL expires mid-chunk | Retry | Attempt fails; retried with a new URL | Nothing | #109 |
 | Worker crash mid-chunk | Retry | Lease expires; another worker redoes the chunk; the fencing token blocks the stale worker's commit; no duplicate clips | The chunk finishes later | #104, #110, #113 |
 | Crash during task import | Retry | Reconcile with Label Studio before importing; no duplicate tasks | Nothing | #118 |
