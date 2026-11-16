@@ -1,6 +1,7 @@
 package io.github.tanhoangkhoanguyen.vidstream.box;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,5 +64,19 @@ public class BoxClient {
       items.addAll(page.entries());
       if (page.entries().isEmpty() || items.size() >= page.totalCount()) return items;
     }
+  }
+
+  /** Every file under a folder, at any depth: one listing per folder. */
+  public List<Item> filesUnder(String accessToken, String folderId) {
+    var files = new ArrayList<Item>();
+    var folders = new ArrayDeque<String>();
+    folders.push(folderId);
+    while (!folders.isEmpty()) {
+      for (var item : folderItems(accessToken, folders.pop())) {
+        if ("folder".equals(item.type())) folders.push(item.id());
+        else if ("file".equals(item.type())) files.add(item);
+      }
+    }
+    return files;
   }
 }
