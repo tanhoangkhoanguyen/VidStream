@@ -3,6 +3,7 @@ package io.github.tanhoangkhoanguyen.vidstream.clip;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
+import io.github.tanhoangkhoanguyen.vidstream.clip.ClipPlan.Chunk;
 import io.github.tanhoangkhoanguyen.vidstream.clip.ClipPlan.Clip;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
@@ -42,13 +43,24 @@ class ClipPlanTest {
   }
 
   @Test
-  void clipsAreContiguousAndCoverTheVideo() {
+  void groupsClipsIntoChunks() {
+    var clips = ClipPlan.clips(60_000, 12, 5);
+    assertThat(ClipPlan.chunks(clips, 2))
+        .containsExactly(
+            new Chunk(0, 0, 1, 0, 24_000),
+            new Chunk(1, 2, 3, 24_000, 48_000),
+            new Chunk(2, 4, 4, 48_000, 60_000));
+  }
+
+  @Test
+  void planIsContiguousAndCoversTheVideo() {
     var random = new Random(42);
     for (int run = 0; run < 10_000; run++) {
       long duration = 1 + random.nextLong(4 * 3_600_000L);
       int clipSeconds = 5 + random.nextInt(56);
       int minLast = 1 + random.nextInt(clipSeconds);
       var clips = ClipPlan.clips(duration, clipSeconds, minLast);
+      var chunks = ClipPlan.chunks(clips, 1 + random.nextInt(100));
 
       assertThat(clips.getFirst().startMs()).isZero();
       assertThat(clips.getLast().endMs()).isEqualTo(duration);
@@ -61,6 +73,18 @@ class ClipPlanTest {
         if (clips.size() > 1)
           assertThat(clip.endMs() - clip.startMs()).isGreaterThanOrEqualTo(minLast * 1000L);
       }
+      // Chunks cover every clip exactly once, in order.
+      int next = 0;
+      for (int i = 0; i < chunks.size(); i++) {
+        var chunk = chunks.get(i);
+        assertThat(chunk.index()).isEqualTo(i);
+        assertThat(chunk.firstClip()).isEqualTo(next);
+        assertThat(chunk.lastClip()).isGreaterThanOrEqualTo(chunk.firstClip());
+        assertThat(chunk.startMs()).isEqualTo(clips.get(chunk.firstClip()).startMs());
+        assertThat(chunk.endMs()).isEqualTo(clips.get(chunk.lastClip()).endMs());
+        next = chunk.lastClip() + 1;
+      }
+      assertThat(next).isEqualTo(clips.size());
     }
   }
 }

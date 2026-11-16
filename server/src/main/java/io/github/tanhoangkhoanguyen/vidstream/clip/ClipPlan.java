@@ -3,11 +3,17 @@ package io.github.tanhoangkhoanguyen.vidstream.clip;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Deterministic clip boundaries: the same video and dataset config always give the same clips. */
+/**
+ * Deterministic clip boundaries and chunk ranges: the same video and dataset config always give the
+ * same plan.
+ */
 public final class ClipPlan {
 
   /** Clip {@code index} covers [startMs, endMs). */
   public record Clip(int index, long startMs, long endMs) {}
+
+  /** Chunk {@code index}: clips firstClip..lastClip, one ffmpeg run over [startMs, endMs). */
+  public record Chunk(int index, int firstClip, int lastClip, long startMs, long endMs) {}
 
   private ClipPlan() {}
 
@@ -26,5 +32,17 @@ public final class ClipPlan {
       clips.add(new Clip(i, i * clipMs, i == n - 1 ? durationMs : (i + 1) * clipMs));
     }
     return clips;
+  }
+
+  /** Consecutive groups of {@code chunkClips} clips; the last group may be smaller. */
+  public static List<Chunk> chunks(List<Clip> clips, int chunkClips) {
+    int n = (clips.size() + chunkClips - 1) / chunkClips;
+    var chunks = new ArrayList<Chunk>(n);
+    for (int i = 0; i < n; i++) {
+      var first = clips.get(i * chunkClips);
+      var last = clips.get(Math.min((i + 1) * chunkClips, clips.size()) - 1);
+      chunks.add(new Chunk(i, first.index(), last.index(), first.startMs(), last.endMs()));
+    }
+    return chunks;
   }
 }
