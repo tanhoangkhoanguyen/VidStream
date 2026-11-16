@@ -111,13 +111,14 @@ public class JobQueue {
   }
 
   /**
-   * Marks the job done and runs {@code work} (e.g. insert its results) in the same transaction, so
-   * results commit only with a current lease. The fenced update goes first: the row stays locked,
-   * so no claim can take the job while {@code work} runs. If {@code work} throws, nothing commits.
+   * Deletes the finished job and runs {@code work} (e.g. insert its results) in the same
+   * transaction, so results commit only with a current lease. The fenced delete goes first: the row
+   * stays locked, so no claim can take the job while {@code work} runs. If {@code work} throws,
+   * nothing commits. Finished jobs are not kept: results live in their own tables.
    */
   public void complete(Job job, Runnable work) {
     tx.executeWithoutResult(status -> {
-      transition(job, "status = 'DONE'", Map.of());
+      fenced(job, "DELETE FROM jobs", Map.of());
       work.run();
     });
   }
@@ -152,13 +153,14 @@ public class JobQueue {
     return text.length() > 300 ? text.substring(0, 300) : text;
   }
 
-  /** Applies {@code set} only while {@code job}'s lease is current. */
   private void transition(Job job, String set, Map<String, ?> params) {
+    fenced(job, "UPDATE jobs SET " + set, params);
+  }
+
+  /** Runs {@code statement} only while {@code job}'s lease is current. */
+  private void fenced(Job job, String statement, Map<String, ?> params) {
     int rows =
-        jdbc.sql(
-                "UPDATE jobs SET "
-                    + set
-                    + " WHERE id = :id AND lease_version = :version AND status = 'LEASED'")
+        jdbc.sql(statement + " WHERE id = :id AND lease_version = :version AND status = 'LEASED'")
             .param("id", job.id())
             .param("version", job.leaseVersion())
             .params(params)

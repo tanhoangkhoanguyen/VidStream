@@ -37,13 +37,13 @@ class JobQueueCommitIT extends JobQueueSupport {
   }
 
   @Test
-  void completeCommitsWorkWithTheJob() {
-    var id = enqueue(CHUNK, 0);
+  void completeDeletesJobAndCommitsWork() {
+    enqueue(CHUNK, 0);
 
     queue.complete(claim("w1").orElseThrow(), () -> enqueue(CHUNK, 1));
 
-    assertThat(state(id)).isEqualTo("DONE w1 1");
-    assertThat(jobCount()).isEqualTo(2);
+    assertThat(jdbc.sql("SELECT payload ->> 'chunk' FROM jobs").query(String.class).list())
+        .containsExactly("1");
   }
 
   @Test
@@ -66,7 +66,7 @@ class JobQueueCommitIT extends JobQueueSupport {
 
   @Test
   void staleWorkerCommitsNothing() {
-    var id = enqueue(CHUNK, 0);
+    enqueue(CHUNK, 0);
     var stale = claim("w1").orElseThrow();
     update("lease_until = now() - interval '1 second'");
     var current = claim("w2").orElseThrow();
@@ -76,7 +76,7 @@ class JobQueueCommitIT extends JobQueueSupport {
     assertThat(jobCount()).isEqualTo(1);
 
     queue.complete(current, () -> {});
-    assertThat(state(id)).isEqualTo("DONE w2 2");
+    assertThat(jobCount()).isZero();
   }
 
   /** Many workers on many nodes: each claimer has its own connection. Prints a benchmark line. */
@@ -123,9 +123,7 @@ class JobQueueCommitIT extends JobQueueSupport {
     }
 
     assertThat(claimed).hasSize(jobs).doesNotHaveDuplicates();
-    assertThat(
-            jdbc.sql("SELECT count(*) FROM jobs WHERE status = 'DONE'").query(Long.class).single())
-        .isEqualTo(jobs);
+    assertThat(jobCount()).isZero();
     var sorted = latencies.stream().sorted().toList();
     System.out.printf(
         "BENCHMARK claim+complete: %d jobs, %d claimers: %.0f jobs/s; claim p50 %.1f ms, p99 %.1f"

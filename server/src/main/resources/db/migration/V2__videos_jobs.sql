@@ -23,8 +23,9 @@ CREATE TABLE jobs (
   dataset_id    bigint NOT NULL REFERENCES datasets,
   video_id      bigint REFERENCES videos,
   payload       jsonb  NOT NULL DEFAULT '{}',
+  -- A finished job is deleted with its results' commit.
   status        text   NOT NULL DEFAULT 'PENDING'
-                  CHECK (status IN ('PENDING', 'LEASED', 'DONE', 'FAILED')),
+                  CHECK (status IN ('PENDING', 'LEASED', 'FAILED')),
   -- Not claimable before this: retry and release backoff.
   run_after     timestamptz NOT NULL DEFAULT now(),
   lease_until   timestamptz,
@@ -38,9 +39,10 @@ CREATE TABLE jobs (
   CHECK (type NOT IN ('PROBE', 'CHUNK') OR video_id IS NOT NULL)
 );
 
--- A rescan or re-probe never enqueues the same work twice.
+-- The same work is never queued twice. Once done (row deleted), the video's status keeps it from
+-- being queued again: PROBE moves it past DISCOVERED in the same transaction.
 CREATE UNIQUE INDEX jobs_once ON jobs (type, video_id, (payload ->> 'chunk')) NULLS NOT DISTINCT
   WHERE type IN ('PROBE', 'CHUNK');
 
--- The claim walks open jobs in id order; DONE and FAILED rows stay out.
+-- The claim walks open jobs in id order; FAILED rows stay out.
 CREATE INDEX jobs_open ON jobs (id) WHERE status IN ('PENDING', 'LEASED');
