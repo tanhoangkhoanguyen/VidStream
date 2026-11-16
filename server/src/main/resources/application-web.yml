@@ -1,0 +1,16 @@
+server:
+  # Behind Caddy: redirect URIs use the public scheme and host from X-Forwarded-*.
+  forward-headers-strategy: native
+  servlet:
+    session:
+      timeout: 8h
+      cookie:
+        # Not Label Studio's "sessionid".
+        name: vs_session
+        # Parent domain: the gate on <dataset>.<domain> must see the cookie.
+        domain: ${vidstream.domain}
+        # Absolute lifetime: Box membership is re-checked at least every 8 h.
+        max-age: 8h
+        http-only: true
+        secure: true
+        same-site: lax

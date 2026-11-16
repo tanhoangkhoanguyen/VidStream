@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VidStream</title>
+</head>
+<body>
+<h1>VidStream</h1>
+<ul th:unless="${datasets.isEmpty()}">
+  <li th:each="d : ${datasets}"><a th:href="@{/datasets/{name}(name=${d})}" th:text="${d}">dataset</a></li>
+</ul>
+<p th:if="${datasets.isEmpty()}">
+  Your Box account cannot read any dataset folder. Ask for access in Box, then sign in again.
+</p>
+<!--/* th:action adds the CSRF token. */-->
+<form th:action="@{/logout}" method="post">
+  <button type="submit">Sign out</button>
+</form>
+</body>
+</html>

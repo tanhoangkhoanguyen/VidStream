@@ -1,0 +1,10 @@
+# Datasets served by VidStream; the web server applies this file at startup.
+# Folder and clip settings are fixed once a dataset exists; removing an entry deactivates it.
+#
+# - name: music-2026          # a-z, 0-9, -; Label Studio runs at <name>.<domain>
+#   box_folder_id: "123456789"
+#   clip_seconds: 12          # 5-60
+#   min_last_clip_seconds: 5  # a shorter final remainder joins the previous clip
+#   fps: 30                   # 24, 25 or 30
+#   chunk_clips: 50           # clips per worker job
+[]

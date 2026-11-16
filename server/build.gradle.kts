@@ -34,15 +34,22 @@ dependencies {
   implementation(platform(libs.spring.boot.bom))
   implementation(libs.spring.boot.starter.webmvc)
   implementation(libs.spring.boot.starter.actuator)
+  implementation(libs.spring.boot.starter.thymeleaf)
+  implementation(libs.spring.boot.starter.security.oauth2.client)
+  implementation(libs.spring.boot.starter.restclient)
   implementation(libs.spring.boot.starter.flyway)
+  implementation(libs.jackson.dataformat.yaml)
   runtimeOnly(libs.micrometer.registry.prometheus)
   runtimeOnly(libs.flyway.database.postgresql)
   runtimeOnly(libs.postgresql)
 
   testImplementation(libs.spring.boot.starter.webmvc.test)
+  testImplementation(libs.spring.boot.starter.jdbc.test)
+  testImplementation(libs.spring.boot.starter.security.test)
   testImplementation(libs.spring.boot.testcontainers)
   testImplementation(libs.testcontainers.postgresql)
   testImplementation(libs.archunit.junit5)
+  testImplementation(libs.wiremock.standalone)
   testRuntimeOnly(libs.junit.platform.launcher)
 }
 

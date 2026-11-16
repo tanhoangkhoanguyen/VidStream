@@ -14,6 +14,9 @@ x-server-env: &server-env
   SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/vidstream
   SPRING_DATASOURCE_USERNAME: vidstream
   SPRING_DATASOURCE_PASSWORD: ${VIDSTREAM_DB_PASSWORD:?}
+  VIDSTREAM_TOKENKEY: ${VIDSTREAM_TOKEN_KEY:?}
+  BOX_CLIENT_ID: ${BOX_CLIENT_ID:?}
+  BOX_CLIENT_SECRET: ${BOX_CLIENT_SECRET:?}
 
 x-ls-dev: &ls-dev
   image: vidstream-label-studio:1.23.2
@@ -53,6 +56,10 @@ services:
     environment:
       <<: *server-env
       VIDSTREAM_ROLE: web
+      VIDSTREAM_DATASETSFILE: file:/app/datasets.yml
+      VIDSTREAM_DOMAIN: ${VIDSTREAM_DOMAIN:?}
+    volumes:
+      - ./datasets.yml:/app/datasets.yml:ro
     networks:
       default:
       hooks:
