@@ -7,6 +7,8 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Job queue in Postgres. Workers on any node coordinate only through the jobs table: a claim takes
@@ -60,9 +62,11 @@ public class JobQueue {
       """;
 
   private final JdbcClient jdbc;
+  private final TransactionTemplate tx;
 
-  JobQueue(JdbcClient jdbc) {
+  JobQueue(JdbcClient jdbc, PlatformTransactionManager txManager) {
     this.jdbc = jdbc;
+    this.tx = new TransactionTemplate(txManager);
   }
 
   /**
@@ -104,6 +108,18 @@ public class JobQueue {
         job,
         "lease_until = now() + :leaseMs * interval '1 millisecond'",
         Map.of("leaseMs", LEASE.toMillis()));
+  }
+
+  /**
+   * Marks the job done and runs {@code work} (e.g. insert its results) in the same transaction, so
+   * results commit only with a current lease. The fenced update goes first: the row stays locked,
+   * so no claim can take the job while {@code work} runs. If {@code work} throws, nothing commits.
+   */
+  public void complete(Job job, Runnable work) {
+    tx.executeWithoutResult(status -> {
+      transition(job, "status = 'DONE'", Map.of());
+      work.run();
+    });
   }
 
   /** Retries the job after {@link #RETRY_DELAY}, or fails it on the last attempt. */
