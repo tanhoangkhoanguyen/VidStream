@@ -30,6 +30,27 @@ public class JobQueue {
   public record Job(
       long id, Type type, long datasetId, Long videoId, String payload, int leaseVersion) {}
 
+  // An expired lease on the last attempt (the worker crashed) fails the job, keeping who held it.
+  // The lease_version bump fences that worker out either way.
+  private static final String CLAIM =
+      """
+      WITH next AS (
+        SELECT id, attempts >= :maxAttempts AS exhausted FROM jobs
+        WHERE (status = 'PENDING' OR (status = 'LEASED' AND lease_until < now()))
+          AND run_after <= now() AND type IN (:types) AND dataset_id IN (:datasets)
+        ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1)
+      UPDATE jobs j SET
+        status = CASE WHEN n.exhausted THEN 'FAILED' ELSE 'LEASED' END,
+        worker_id = CASE WHEN n.exhausted THEN j.worker_id ELSE :worker END,
+        last_error = CASE WHEN n.exhausted THEN 'lease expired on the last attempt'
+                          ELSE j.last_error END,
+        lease_until = now() + :leaseMs * interval '1 millisecond',
+        lease_version = j.lease_version + 1,
+        attempts = least(j.attempts + 1, :maxAttempts)
+      FROM next n WHERE j.id = n.id
+      RETURNING j.id, j.type, j.dataset_id, j.video_id, j.payload, j.lease_version, n.exhausted
+      """;
+
   private final JdbcClient jdbc;
 
   JobQueue(JdbcClient jdbc) {
@@ -44,32 +65,28 @@ public class JobQueue {
    */
   public Optional<Job> claim(String workerId, Collection<Type> types, Collection<Long> datasets) {
     if (types.isEmpty() || datasets.isEmpty()) return Optional.empty();
-    return jdbc.sql(
-            """
-            UPDATE jobs j SET status = 'LEASED', worker_id = :worker,
-              lease_until = now() + :leaseMs * interval '1 millisecond',
-              lease_version = j.lease_version + 1, attempts = j.attempts + 1
-            WHERE j.id = (
-              SELECT id FROM jobs
-              WHERE (status = 'PENDING' OR (status = 'LEASED' AND lease_until < now()))
-                AND run_after <= now() AND attempts < :maxAttempts
-                AND type IN (:types) AND dataset_id IN (:datasets)
-              ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1)
-            RETURNING j.id, j.type, j.dataset_id, j.video_id, j.payload, j.lease_version
-            """)
-        .param("worker", workerId)
-        .param("leaseMs", LEASE.toMillis())
-        .param("maxAttempts", MAX_ATTEMPTS)
-        .param("types", types.stream().map(Type::name).toList())
-        .param("datasets", datasets)
-        .query((rs, i) ->
-            new Job(
-                rs.getLong("id"),
-                Type.valueOf(rs.getString("type")),
-                rs.getLong("dataset_id"),
-                rs.getObject("video_id", Long.class),
-                rs.getString("payload"),
-                rs.getInt("lease_version")))
-        .optional();
+    while (true) {
+      var rows =
+          jdbc.sql(CLAIM)
+              .param("worker", workerId)
+              .param("leaseMs", LEASE.toMillis())
+              .param("maxAttempts", MAX_ATTEMPTS)
+              .param("types", types.stream().map(Type::name).toList())
+              .param("datasets", datasets)
+              .query((rs, i) ->
+                  rs.getBoolean("exhausted")
+                      ? null
+                      : new Job(
+                          rs.getLong("id"),
+                          Type.valueOf(rs.getString("type")),
+                          rs.getLong("dataset_id"),
+                          rs.getObject("video_id", Long.class),
+                          rs.getString("payload"),
+                          rs.getInt("lease_version")))
+              .list();
+      if (rows.isEmpty()) return Optional.empty();
+      // Null: the job was failed instead; try the next one.
+      if (rows.getFirst() != null) return Optional.of(rows.getFirst());
+    }
   }
 }

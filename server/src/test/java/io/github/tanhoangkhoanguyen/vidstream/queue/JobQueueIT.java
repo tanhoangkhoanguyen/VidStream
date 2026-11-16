@@ -97,13 +97,25 @@ class JobQueueIT {
   }
 
   @Test
-  void skipsJobsNotDueOrOutOfAttempts() {
+  void skipsJobsNotDue() {
     enqueue(CHUNK, 0);
-    enqueue(CHUNK, 1);
-    update("run_after = now() + interval '1 minute' WHERE payload ->> 'chunk' = '0'");
-    update("attempts = 3 WHERE payload ->> 'chunk' = '1'");
+    update("run_after = now() + interval '1 minute'");
 
     assertThat(claim("w1")).isEmpty();
+  }
+
+  @Test
+  void failsJobWhoseLastLeaseExpired() {
+    var crashed = enqueue(CHUNK, 0);
+    var next = enqueue(CHUNK, 1);
+    update(
+        "status = 'LEASED', worker_id = 'w0', attempts = "
+            + JobQueue.MAX_ATTEMPTS
+            + ", lease_until = now() - interval '1 second' WHERE id = "
+            + crashed);
+
+    assertThat(claim("w1")).get().extracting(Job::id).isEqualTo(next);
+    assertThat(state(crashed)).isEqualTo("FAILED w0 " + JobQueue.MAX_ATTEMPTS);
   }
 
   @Test
