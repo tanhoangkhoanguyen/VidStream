@@ -29,7 +29,12 @@ public class BoxClient {
   }
 
   BoxClient(RestClient.Builder builder, BoxProperties props, BoxRetry.Sleeper sleeper) {
-    this.http = builder.baseUrl(props.apiUrl()).requestInterceptor(new BoxRetry(sleeper)).build();
+    this.http =
+        builder
+            .baseUrl(props.apiUrl())
+            .requestFactory(BoxHttp.requestFactory())
+            .requestInterceptor(new BoxRetry(sleeper))
+            .build();
   }
 
   /** Whether the token's user can read the folder. Box answers 404 for both no access and none. */

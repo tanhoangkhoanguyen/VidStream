@@ -2,6 +2,7 @@ package io.github.tanhoangkhoanguyen.vidstream.auth;
 
 import static java.time.ZoneOffset.UTC;
 
+import io.github.tanhoangkhoanguyen.vidstream.box.BoxHttp;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import org.slf4j.Logger;
@@ -11,15 +12,18 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AccessTokenResponseClient;
 import org.springframework.security.oauth2.client.endpoint.OAuth2RefreshTokenGrantRequest;
 import org.springframework.security.oauth2.client.endpoint.RestClientRefreshTokenTokenResponseClient;
+import org.springframework.security.oauth2.client.http.OAuth2ErrorResponseErrorHandler;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.OAuth2RefreshToken;
+import org.springframework.security.oauth2.core.http.converter.OAuth2AccessTokenResponseHttpMessageConverter;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.client.RestClient;
 
 /**
  * A user's Box access token for background work. Refreshes under a lock on the user's row: Box
@@ -45,12 +49,20 @@ public class TokenVault {
       TokenCipher cipher,
       PlatformTransactionManager txManager,
       ClientRegistrationRepository registrations) {
-    this(
-        jdbc,
-        cipher,
-        txManager,
-        registrations.findByRegistrationId("box"),
-        new RestClientRefreshTokenTokenResponseClient());
+    this(jdbc, cipher, txManager, registrations.findByRegistrationId("box"), refresher());
+  }
+
+  /** Spring's refresh client with the Box timeouts: a refresh runs under the user's row lock. */
+  static RestClientRefreshTokenTokenResponseClient refresher() {
+    var refresher = new RestClientRefreshTokenTokenResponseClient();
+    refresher.setRestClient(
+        RestClient.builder()
+            .requestFactory(BoxHttp.requestFactory())
+            .configureMessageConverters(
+                c -> c.addCustomConverter(new OAuth2AccessTokenResponseHttpMessageConverter()))
+            .defaultStatusHandler(new OAuth2ErrorResponseErrorHandler())
+            .build());
+    return refresher;
   }
 
   TokenVault(
