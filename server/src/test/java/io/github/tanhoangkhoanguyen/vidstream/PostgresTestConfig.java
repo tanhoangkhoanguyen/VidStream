@@ -9,7 +9,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 public class PostgresTestConfig {
 
   // One container for every test context; Ryuk removes it when the JVM exits.
-  private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+  // Room for the queue test's 100 claimers on their own connections.
+  private static final PostgreSQLContainer POSTGRES =
+      new PostgreSQLContainer("postgres:17")
+          .withCommand("postgres", "-c", "fsync=off", "-c", "max_connections=200");
 
   @Bean(destroyMethod = "")
   @ServiceConnection
