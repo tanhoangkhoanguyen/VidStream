@@ -160,4 +160,23 @@ class TokenVaultIT {
         .isInstanceOf(OAuth2AuthorizationException.class);
     assertThat(hasTokens(id)).isTrue();
   }
+
+  @Test
+  void idleGrantIsRefreshed() {
+    long id = user(TokenVault.IDLE.negated().minusDays(1));
+
+    vault.refreshIdle();
+
+    box.verify(1, postRequestedFor(urlPathEqualTo("/token")));
+    assertThat(vault.accessToken(id)).isEqualTo("access-2");
+  }
+
+  @Test
+  void recentGrantIsLeftAlone() {
+    user(Duration.ofMinutes(-1));
+
+    vault.refreshIdle();
+
+    box.verify(0, postRequestedFor(urlPathEqualTo("/token")));
+  }
 }

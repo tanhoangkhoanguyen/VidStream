@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AccessTokenResponseClient;
 import org.springframework.security.oauth2.client.endpoint.OAuth2RefreshTokenGrantRequest;
 import org.springframework.security.oauth2.client.endpoint.RestClientRefreshTokenTokenResponseClient;
@@ -36,6 +37,9 @@ public class TokenVault {
 
   /** A token is refreshed once less than this is left. */
   static final Duration MIN_VALIDITY = Duration.ofMinutes(5);
+
+  /** Box ends a refresh token unused for 60 days; idle ones are refreshed well before. */
+  static final Duration IDLE = Duration.ofDays(30);
 
   private final JdbcClient jdbc;
   private final TokenCipher cipher;
@@ -91,6 +95,33 @@ public class TokenVault {
     var token = tx.execute(status -> lockedAccessToken(userId));
     if (token == null) throw new SignInRequiredException(userId);
     return token;
+  }
+
+  /**
+   * Refreshes every grant idle for {@link #IDLE}, so workers keep a member token while users stay
+   * offline. Only a revoked or expired grant needs the user to sign in again. Runs on every node;
+   * the row lock and validity check make each refresh happen once.
+   */
+  @Scheduled(cron = "0 0 4 * * *", zone = "America/New_York")
+  public void refreshIdle() {
+    var idle =
+        jdbc.sql(
+                "SELECT id FROM users WHERE refresh_token_enc IS NOT NULL"
+                    + " AND access_expires_at < now() - :idleMs * interval '1 millisecond'")
+            .param("idleMs", IDLE.toMillis())
+            .query(Long.class)
+            .list();
+    int failed = 0;
+    for (long id : idle) {
+      try {
+        accessToken(id);
+      } catch (SignInRequiredException e) {
+        failed++; // Already cleared and logged.
+      } catch (RuntimeException e) {
+        failed++; // Box unreachable: tried again tomorrow, tokens kept.
+      }
+    }
+    log.info("Idle Box tokens: {} refreshed, {} failed", idle.size() - failed, failed);
   }
 
   /** Box rejected the access token (401) before it expired: the next call refreshes it. */
