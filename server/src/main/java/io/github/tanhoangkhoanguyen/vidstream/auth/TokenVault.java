@@ -93,6 +93,15 @@ public class TokenVault {
     return token;
   }
 
+  /** Box rejected the access token (401) before it expired: the next call refreshes it. */
+  public void expire(long userId) {
+    jdbc.sql(
+            "UPDATE users SET access_expires_at = now()"
+                + " WHERE id = ? AND access_token_enc IS NOT NULL")
+        .param(userId)
+        .update();
+  }
+
   /** Null when the user must sign in again. */
   private String lockedAccessToken(long userId) {
     var stored =
