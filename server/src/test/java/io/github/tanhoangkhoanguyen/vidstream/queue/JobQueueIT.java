@@ -1,0 +1,126 @@
+package io.github.tanhoangkhoanguyen.vidstream.queue;
+
+import static io.github.tanhoangkhoanguyen.vidstream.queue.JobQueue.Type.CHUNK;
+import static io.github.tanhoangkhoanguyen.vidstream.queue.JobQueue.Type.PROBE;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import io.github.tanhoangkhoanguyen.vidstream.queue.JobQueue.Job;
+import java.io.IOException;
+import java.time.Duration;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+// Each test runs in one rolled-back transaction, so now() is fixed within a test.
+class JobQueueIT extends JobQueueSupport {
+
+  @Test
+  void claimsOldestJobWithFirstLease() {
+    var first = enqueue(CHUNK, 0);
+    enqueue(CHUNK, 1);
+
+    assertThat(claim("w1")).hasValue(new Job(first, CHUNK, dataset, video, "{\"chunk\": 0}", 1));
+    assertThat(state(first)).isEqualTo("LEASED w1 1");
+  }
+
+  @Test
+  void neverClaimsLiveLease() {
+    enqueue(CHUNK, 0);
+    claim("w1");
+
+    assertThat(claim("w2")).isEmpty();
+  }
+
+  @Test
+  void reclaimsExpiredLeaseWithNewerVersion() {
+    var id = enqueue(CHUNK, 0);
+    claim("w1");
+    update("lease_until = now() - interval '1 second'");
+
+    assertThat(claim("w2")).get().extracting(Job::leaseVersion).isEqualTo(2);
+    assertThat(state(id)).isEqualTo("LEASED w2 2");
+  }
+
+  @Test
+  void skipsJobsNotDue() {
+    enqueue(CHUNK, 0);
+    update("run_after = now() + interval '1 minute'");
+
+    assertThat(claim("w1")).isEmpty();
+  }
+
+  @Test
+  void failsJobWhoseLastLeaseExpired() {
+    var crashed = enqueue(CHUNK, 0);
+    var next = enqueue(CHUNK, 1);
+    update(
+        "status = 'LEASED', worker_id = 'w0', attempts = "
+            + JobQueue.MAX_ATTEMPTS
+            + ", lease_until = now() - interval '1 second' WHERE id = "
+            + crashed);
+
+    assertThat(claim("w1")).get().extracting(Job::id).isEqualTo(next);
+    assertThat(state(crashed)).isEqualTo("FAILED w0 " + JobQueue.MAX_ATTEMPTS);
+  }
+
+  @Test
+  void claimsOnlyGivenTypesAndDatasets() {
+    enqueue(PROBE, 0);
+
+    assertThat(queue.claim("w1", List.of(CHUNK), List.of(dataset))).isEmpty();
+    assertThat(queue.claim("w1", List.of(PROBE), List.of(dataset + 1))).isEmpty();
+    assertThat(queue.claim("w1", List.of(PROBE), List.of())).isEmpty();
+  }
+
+  @Test
+  void heartbeatExtendsLease() {
+    var id = enqueue(CHUNK, 0);
+    var job = claim("w1").orElseThrow();
+    update("lease_until = now() + interval '1 second'");
+
+    queue.heartbeat(job);
+
+    assertThat(check(id, "lease_until = now() + interval '2 minutes'")).isTrue();
+  }
+
+  @Test
+  void failRetriesLaterThenFailsOnLastAttempt() {
+    var id = enqueue(CHUNK, 0);
+    for (int attempt = 1; attempt < JobQueue.MAX_ATTEMPTS; attempt++) {
+      queue.fail(claim("w1").orElseThrow(), new IOException("Box 503"));
+      assertThat(state(id)).isEqualTo("PENDING w1 " + attempt);
+      assertThat(check(id, "run_after = now() + interval '1 minute'")).isTrue();
+      update("run_after = now()");
+    }
+
+    queue.fail(claim("w1").orElseThrow(), new IOException("Box 503"));
+
+    assertThat(state(id)).isEqualTo("FAILED w1 " + JobQueue.MAX_ATTEMPTS);
+    assertThat(check(id, "last_error = 'IOException: Box 503'")).isTrue();
+  }
+
+  @Test
+  void releaseDoesNotCountTheAttempt() {
+    var id = enqueue(CHUNK, 0);
+    queue.release(claim("w1").orElseThrow(), Duration.ZERO);
+
+    assertThat(state(id)).isEqualTo("PENDING w1 0");
+    assertThat(claim("w2")).isPresent();
+  }
+
+  @Test
+  void staleWorkerChangesNothing() {
+    var id = enqueue(CHUNK, 0);
+    var stale = claim("w1").orElseThrow();
+    update("lease_until = now() - interval '1 second'");
+    claim("w2");
+
+    assertThatThrownBy(() -> queue.heartbeat(stale)).isInstanceOf(StaleLeaseException.class);
+    assertThatThrownBy(() -> queue.fail(stale, new IOException()))
+        .isInstanceOf(StaleLeaseException.class);
+    assertThatThrownBy(() -> queue.release(stale, Duration.ZERO))
+        .isInstanceOf(StaleLeaseException.class);
+    assertThat(state(id)).isEqualTo("LEASED w2 2");
+    assertThat(check(id, "lease_until = now() + interval '2 minutes'")).isTrue();
+  }
+}

@@ -27,7 +27,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jdbc.test.autoconfigure.JdbcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.security.oauth2.client.endpoint.RestClientRefreshTokenTokenResponseClient;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -69,9 +68,7 @@ class TokenVaultIT {
             .authorizationUri("https://box.test/authorize")
             .tokenUri(box.baseUrl() + "/token")
             .build();
-    vault =
-        new TokenVault(
-            jdbc, cipher, txManager, registration, new RestClientRefreshTokenTokenResponseClient());
+    vault = new TokenVault(jdbc, cipher, txManager, registration, TokenVault.refresher());
     // Slow enough that waiting threads pile up on the row lock.
     box.stubFor(post("/token").willReturn(okJson(REFRESHED).withFixedDelay(200)));
   }
@@ -162,5 +159,24 @@ class TokenVaultIT {
     assertThatThrownBy(() -> vault.accessToken(id))
         .isInstanceOf(OAuth2AuthorizationException.class);
     assertThat(hasTokens(id)).isTrue();
+  }
+
+  @Test
+  void idleGrantIsRefreshed() {
+    long id = user(TokenVault.IDLE.negated().minusDays(1));
+
+    vault.refreshIdle();
+
+    box.verify(1, postRequestedFor(urlPathEqualTo("/token")));
+    assertThat(vault.accessToken(id)).isEqualTo("access-2");
+  }
+
+  @Test
+  void recentGrantIsLeftAlone() {
+    user(Duration.ofMinutes(-1));
+
+    vault.refreshIdle();
+
+    box.verify(0, postRequestedFor(urlPathEqualTo("/token")));
   }
 }

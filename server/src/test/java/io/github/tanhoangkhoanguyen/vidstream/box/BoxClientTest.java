@@ -4,9 +4,13 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
+import static io.github.tanhoangkhoanguyen.vidstream.box.BoxPages.file;
+import static io.github.tanhoangkhoanguyen.vidstream.box.BoxPages.folder;
+import static io.github.tanhoangkhoanguyen.vidstream.box.BoxPages.page;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -109,5 +113,46 @@ class BoxClientTest {
         .isInstanceOf(HttpServerErrorException.class);
     box.verify(1 + BoxRetry.MAX_RETRIES, getRequestedFor(urlPathEqualTo(FOLDER)));
     assertThat(waits).hasSize(BoxRetry.MAX_RETRIES);
+  }
+
+  @Test
+  void folderItemsReadsEveryPage() {
+    // The fixture is one page of 3 of 12 entries; serve it for every offset.
+    box.stubFor(
+        get(urlPathEqualTo(FOLDER + "/items"))
+            .willReturn(okJson(Fixtures.read("box/folder-items.json"))));
+
+    var items = client.folderItems("token", "1");
+
+    assertThat(items).hasSize(12);
+    assertThat(items.getFirst())
+        .isEqualTo(new BoxClient.Item("folder", "335647450918", 233578161, null, null));
+    for (var offset : List.of("0", "3", "6", "9")) {
+      box.verify(
+          getRequestedFor(urlPathEqualTo(FOLDER + "/items"))
+              .withQueryParam("offset", equalTo(offset))
+              .withQueryParam("limit", equalTo("1000"))
+              .withQueryParam("fields", equalTo("type,id,size,extension,sha1"))
+              .withHeader("Authorization", equalTo("Bearer token")));
+    }
+    box.verify(4, getRequestedFor(urlPathEqualTo(FOLDER + "/items")));
+  }
+
+  void stubItems(String folderId, int offset, String body) {
+    box.stubFor(
+        get(urlPathEqualTo("/2.0/folders/" + folderId + "/items"))
+            .withQueryParam("offset", equalTo(String.valueOf(offset)))
+            .willReturn(okJson(body)));
+  }
+
+  @Test
+  void filesUnderWalksSubfoldersAndPages() {
+    stubItems("1", 0, page(3, 0, folder("2"), file("10", "mp4", "aa")));
+    stubItems("1", 2, page(3, 2, file("11", "lrf", "bb")));
+    stubItems("2", 0, page(1, 0, file("12", "mp4", "cc")));
+
+    assertThat(client.filesUnder("token", "1"))
+        .extracting(BoxClient.Item::id)
+        .containsExactlyInAnyOrder("10", "11", "12");
   }
 }
