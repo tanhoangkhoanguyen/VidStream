@@ -10,8 +10,10 @@ import io.github.tanhoangkhoanguyen.vidstream.PostgresTestConfig;
 import io.github.tanhoangkhoanguyen.vidstream.media.Ffmpeg;
 import io.github.tanhoangkhoanguyen.vidstream.media.Ffprobe;
 import io.github.tanhoangkhoanguyen.vidstream.media.TestMedia;
+import io.github.tanhoangkhoanguyen.vidstream.queue.JobQueue;
 import io.github.tanhoangkhoanguyen.vidstream.queue.JobQueue.Job;
 import io.github.tanhoangkhoanguyen.vidstream.queue.JobQueue.Type;
+import io.github.tanhoangkhoanguyen.vidstream.queue.StaleLeaseException;
 import io.github.tanhoangkhoanguyen.vidstream.storage.ClipStore;
 import io.github.tanhoangkhoanguyen.vidstream.storage.GarageContainer;
 import io.github.tanhoangkhoanguyen.vidstream.worker.JobSource;
@@ -20,6 +22,8 @@ import io.github.tanhoangkhoanguyen.vidstream.worker.WorkDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
@@ -34,7 +38,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /** A probed 40 s video in 10 s clips; the job cuts chunk 1 (clips 2 and 3). */
 @JdbcTest(properties = "vidstream.role=web")
-@Import(PostgresTestConfig.class)
+@Import({PostgresTestConfig.class, JobQueue.class})
 class ChunkIT {
 
   static final GarageContainer GARAGE = new GarageContainer();
@@ -44,6 +48,7 @@ class ChunkIT {
 
   @TempDir Path work;
   @Autowired JdbcTemplate jdbc;
+  @Autowired JobQueue queue;
   ChunkJob chunk;
   ChunkExecutor executor;
   long dataset;
@@ -163,6 +168,39 @@ class ChunkIT {
                     + " ORDER BY first_clip_index) FROM units",
                 String.class))
         .isEqualTo("0:0-10000 1:10000-20000 2:20000-30000 3:30000-40000");
+  }
+
+  @Test
+  void staleAttemptCommitsNothingAndItsUploadsAreSwept() throws Exception {
+    jdbc.update(
+        "INSERT INTO jobs (type, dataset_id, video_id, payload)"
+            + " VALUES ('CHUNK', ?, ?, '{\"chunk\": 1, \"first\": 2, \"last\": 3}')",
+        dataset,
+        video);
+    var stale = queue.claim("w1:0", List.of(Type.CHUNK), List.of(dataset)).orElseThrow();
+    var staleClips = executor.execute(stale, chunk.prepare(stale));
+    // w1 stalls past its lease; w2 takes the job over and completes it.
+    jdbc.update("UPDATE jobs SET lease_until = now() - interval '1 second'");
+    var current = queue.claim("w2:0", List.of(Type.CHUNK), List.of(dataset)).orElseThrow();
+    var currentClips = executor.execute(current, chunk.prepare(current));
+    queue.complete(current, () -> chunk.commit(current, currentClips));
+
+    // w1 reports late: rejected, so its uploads stay unreferenced.
+    assertThatThrownBy(() -> queue.complete(stale, () -> chunk.commit(stale, staleClips)))
+        .isInstanceOf(StaleLeaseException.class);
+    var committed = List.of(ChunkJob.key(current, 2), ChunkJob.key(current, 3));
+    assertThat(stored())
+        .isEqualTo("0 - | 1 - | 2 %s | 3 %s".formatted(committed.get(0), committed.get(1)));
+    assertThat(objects()).hasSize(4);
+
+    new OrphanClips(jdbc, store, Duration.ZERO).sweep();
+
+    assertThat(objects()).containsExactlyInAnyOrderElementsOf(committed);
+  }
+
+  /** The video's objects. */
+  List<String> objects() {
+    return store.keysOlderThan("clips-d", video + "/", Instant.now().plusSeconds(1));
   }
 
   /** "status units". */
