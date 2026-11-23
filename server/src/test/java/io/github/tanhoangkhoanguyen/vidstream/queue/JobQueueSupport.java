@@ -62,6 +62,14 @@ abstract class JobQueueSupport {
         .single();
   }
 
+  /** "status last_error" of the video. */
+  String videoState() {
+    return jdbc.sql("SELECT concat_ws(' ', status, last_error) FROM videos WHERE id = ?")
+        .param(video)
+        .query(String.class)
+        .single();
+  }
+
   boolean check(long id, String condition) {
     return jdbc.sql("SELECT " + condition + " FROM jobs WHERE id = ?")
         .param(id)

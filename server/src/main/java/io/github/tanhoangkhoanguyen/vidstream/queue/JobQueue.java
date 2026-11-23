@@ -1,10 +1,13 @@
 package io.github.tanhoangkhoanguyen.vidstream.queue;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -15,10 +18,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * a lease and a new fencing token ({@code lease_version}) that every later transition must present.
  */
 @Repository
+@Profile("web")
 public class JobQueue {
 
   /** Without a heartbeat in time, another worker may claim the job. */
-  static final Duration LEASE = Duration.ofMinutes(2);
+  public static final Duration LEASE = Duration.ofMinutes(2);
 
   /** Claims per job, crashed attempts included: 1 try + 2 retries. */
   static final int MAX_ATTEMPTS = 3;
@@ -40,15 +44,28 @@ public class JobQueue {
   public record Job(
       long id, Type type, long datasetId, Long videoId, String payload, int leaseVersion) {}
 
+  // Fair share: the dataset with the fewest leased jobs goes first, then the oldest job; datasets
+  // tie when slots are free. Each dataset's head comes from jobs_open, so the cost grows with the
+  // datasets, not the jobs. BETWEEN, not =: with =, the planner may walk the primary key in id
+  // order
+  // instead (it assumes datasets spread evenly over ids) and scan a paused dataset's jobs.
   // An expired lease on the last attempt (the worker crashed) fails the job, keeping who held it.
   // The lease_version bump fences that worker out either way.
   private static final String CLAIM =
       """
-      WITH next AS (
-        SELECT id, attempts >= :maxAttempts AS exhausted FROM jobs
-        WHERE (status = 'PENDING' OR (status = 'LEASED' AND lease_until < now()))
-          AND run_after <= now() AND type IN (:types) AND dataset_id IN (:datasets)
-        ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1)
+      WITH leased AS (
+        SELECT dataset_id, count(*) AS n FROM jobs WHERE status = 'LEASED' GROUP BY dataset_id),
+      next AS (
+        SELECT j.id, j.attempts >= :maxAttempts AS exhausted
+        FROM datasets d LEFT JOIN leased l ON l.dataset_id = d.id
+        CROSS JOIN LATERAL (
+          SELECT id, attempts FROM jobs
+          WHERE dataset_id BETWEEN d.id AND d.id
+            AND (status = 'PENDING' OR (status = 'LEASED' AND lease_until < now()))
+            AND run_after <= now() AND type IN (:types)
+          ORDER BY dataset_id, id LIMIT 1 FOR UPDATE SKIP LOCKED) j
+        WHERE d.id IN (:datasets)
+        ORDER BY coalesce(l.n, 0), j.id LIMIT 1)
       UPDATE jobs j SET
         status = CASE WHEN n.exhausted THEN 'FAILED' ELSE 'LEASED' END,
         worker_id = CASE WHEN n.exhausted THEN j.worker_id ELSE :worker END,
@@ -70,8 +87,9 @@ public class JobQueue {
   }
 
   /**
-   * Leases the oldest claimable job: pending, or leased with an expired lease (its worker died or
-   * stalled). SKIP LOCKED lets concurrent claimers pass each other instead of waiting.
+   * Leases a claimable job: pending, or leased with an expired lease (its worker died or stalled).
+   * Datasets share the workers fairly. SKIP LOCKED lets concurrent claimers pass each other instead
+   * of waiting.
    *
    * @param datasets datasets with room for more work (backpressure)
    */
@@ -85,21 +103,29 @@ public class JobQueue {
               .param("maxAttempts", MAX_ATTEMPTS)
               .param("types", types.stream().map(Type::name).toList())
               .param("datasets", datasets)
-              .query((rs, i) ->
-                  rs.getBoolean("exhausted")
-                      ? null
-                      : new Job(
-                          rs.getLong("id"),
-                          Type.valueOf(rs.getString("type")),
-                          rs.getLong("dataset_id"),
-                          rs.getObject("video_id", Long.class),
-                          rs.getString("payload"),
-                          rs.getInt("lease_version")))
+              .query((rs, i) -> rs.getBoolean("exhausted") ? null : job(rs))
               .list();
       if (rows.isEmpty()) return Optional.empty();
       // Null: the job was failed instead; try the next one.
       if (rows.getFirst() != null) return Optional.of(rows.getFirst());
     }
+  }
+
+  /**
+   * The job as stored, while a worker whose ID starts with {@code workerPrefix} holds it under
+   * {@code leaseVersion}: what a remote worker reports on is read here, not taken from its request.
+   *
+   * @throws StaleLeaseException the lease is no longer such a worker's
+   */
+  public Job leased(long id, int leaseVersion, String workerPrefix) {
+    return jdbc.sql(
+            "SELECT id, type, dataset_id, video_id, payload, lease_version FROM jobs"
+                + " WHERE id = ? AND lease_version = ? AND status = 'LEASED'"
+                + " AND starts_with(worker_id, ?)")
+        .params(id, leaseVersion, workerPrefix)
+        .query((rs, i) -> job(rs))
+        .optional()
+        .orElseThrow(() -> new StaleLeaseException(id, leaseVersion));
   }
 
   /** Extends the lease; call every {@link #LEASE}/3. */
@@ -123,8 +149,12 @@ public class JobQueue {
     });
   }
 
-  /** Retries the job after {@link #RETRY_DELAY}, or fails it on the last attempt. */
-  public void fail(Job job, Throwable cause) {
+  /**
+   * Retries the job after {@link #RETRY_DELAY}, or fails it on the last attempt.
+   *
+   * @param error stored with URLs removed (they may carry tokens), at most 300 chars
+   */
+  public void fail(Job job, String error) {
     transition(
         job,
         """
@@ -134,7 +164,7 @@ public class JobQueue {
         Map.of(
             "maxAttempts", MAX_ATTEMPTS,
             "delayMs", RETRY_DELAY.toMillis(),
-            "error", sanitize(cause)));
+            "error", clean(error)));
   }
 
   /** Gives the job back without counting the attempt, e.g. on shutdown or with no usable token. */
@@ -147,10 +177,24 @@ public class JobQueue {
   }
 
   /** Class and message, URLs removed, at most 300 chars. */
-  static String sanitize(Throwable cause) {
+  public static String sanitize(Throwable cause) {
     var message = cause.getMessage() == null ? "" : ": " + cause.getMessage();
-    var text = URL.matcher(cause.getClass().getSimpleName() + message).replaceAll("<url>");
+    return clean(cause.getClass().getSimpleName() + message);
+  }
+
+  private static String clean(String error) {
+    var text = URL.matcher(error).replaceAll("<url>");
     return text.length() > 300 ? text.substring(0, 300) : text;
+  }
+
+  private static Job job(ResultSet rs) throws SQLException {
+    return new Job(
+        rs.getLong("id"),
+        Type.valueOf(rs.getString("type")),
+        rs.getLong("dataset_id"),
+        rs.getObject("video_id", Long.class),
+        rs.getString("payload"),
+        rs.getInt("lease_version"));
   }
 
   private void transition(Job job, String set, Map<String, ?> params) {
