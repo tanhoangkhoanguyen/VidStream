@@ -30,6 +30,8 @@ class DatasetSyncIT {
     sync =
         new DatasetSync(
             jdbc,
+            null, // sync() runs in the test's transaction.
+            null, // Buckets: ClipStoreIT.
             new VidStreamProperties(Role.WEB, new ByteArrayResource(new byte[0]), null, null));
   }
 

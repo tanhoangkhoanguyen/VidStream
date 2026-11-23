@@ -3,6 +3,7 @@ package io.github.tanhoangkhoanguyen.vidstream.dataset;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import io.github.tanhoangkhoanguyen.vidstream.config.VidStreamProperties;
+import io.github.tanhoangkhoanguyen.vidstream.storage.ClipStore;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -16,9 +17,12 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.Resource;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
-/** Applies {@code datasets.yml} to the database at web startup; any error stops startup. */
+/**
+ * Applies {@code datasets.yml} at web startup: each listed dataset gets its clip bucket, then its
+ * row. Any error stops startup.
+ */
 @Component
 @Profile("web")
 class DatasetSync implements ApplicationRunner {
@@ -26,17 +30,23 @@ class DatasetSync implements ApplicationRunner {
   private static final Logger log = LoggerFactory.getLogger(DatasetSync.class);
 
   private final JdbcClient jdbc;
+  private final TransactionTemplate tx;
+  private final ClipStore store;
   private final Resource file;
 
-  DatasetSync(JdbcClient jdbc, VidStreamProperties props) {
+  DatasetSync(JdbcClient jdbc, TransactionTemplate tx, ClipStore store, VidStreamProperties props) {
     this.jdbc = jdbc;
+    this.tx = tx;
+    this.store = store;
     this.file = Objects.requireNonNull(props.datasetsFile(), "vidstream.datasets-file is not set");
   }
 
   @Override
-  @Transactional
   public void run(ApplicationArguments args) throws IOException {
-    sync(DatasetsYaml.parse(file.getContentAsString(UTF_8)));
+    var specs = DatasetsYaml.parse(file.getContentAsString(UTF_8));
+    // Before the rows, outside their transaction: no dataset is clipped without its bucket.
+    specs.forEach(spec -> store.ensureBucket(ClipStore.bucket(spec.name())));
+    tx.executeWithoutResult(status -> sync(specs));
   }
 
   /** New datasets are added; folder and clip settings never change; unlisted ones go inactive. */
