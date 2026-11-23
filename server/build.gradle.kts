@@ -39,6 +39,15 @@ dependencies {
   implementation(libs.spring.boot.starter.restclient)
   implementation(libs.spring.boot.starter.flyway)
   implementation(libs.jackson.dataformat.yaml)
+  implementation(platform(libs.aws.bom))
+  // On the JDK's HTTP client: Apache HttpClient on the classpath would become Spring's default
+  // for every RestClient (it follows redirects). No async Netty client either.
+  implementation(libs.aws.s3) {
+    exclude(group = "software.amazon.awssdk", module = "apache5-client")
+    exclude(group = "software.amazon.awssdk", module = "apache-client")
+    exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+  }
+  implementation(libs.aws.url.connection.client)
   runtimeOnly(libs.micrometer.registry.prometheus)
   runtimeOnly(libs.flyway.database.postgresql)
   runtimeOnly(libs.postgresql)
