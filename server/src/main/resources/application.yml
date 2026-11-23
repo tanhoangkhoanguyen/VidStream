@@ -1,31 +1,9 @@
 spring:
-  # Both roles: web signs in with it, workers refresh tokens with it.
-  security:
-    oauth2:
-      client:
-        registration:
-          box:
-            client-id: ${BOX_CLIENT_ID}
-            client-secret: ${BOX_CLIENT_SECRET}
-            client-authentication-method: client_secret_post
-            authorization-grant-type: authorization_code
-            # Register it in the Box app: https://<domain>/login/oauth2/code/box
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
-        provider:
-          box:
-            authorization-uri: https://account.box.com/api/oauth2/authorize
-            token-uri: https://api.box.com/oauth2/token
-            user-info-uri: https://api.box.com/2.0/users/me
-            user-name-attribute: id
   application:
     name: vidstream
   profiles:
     # Role = profile (web or worker). Startup fails when vidstream.role is unset.
     active: ${vidstream.role}
-  datasource:
-    hikari:
-      # Virtual threads are unbounded; the pool caps concurrent DB work.
-      maximum-pool-size: 10
   threads:
     virtual:
       enabled: true

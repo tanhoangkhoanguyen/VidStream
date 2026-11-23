@@ -14,7 +14,7 @@ class SecurityConfig {
 
   @Bean
   @Profile("web")
-  SecurityFilterChain web(HttpSecurity http) throws Exception {
+  SecurityFilterChain webFilterChain(HttpSecurity http) throws Exception {
     return http.authorizeHttpRequests(a ->
             a.requestMatchers(EndpointRequest.toAnyEndpoint())
                 .permitAll()
@@ -31,7 +31,7 @@ class SecurityConfig {
 
   @Bean
   @Profile("worker")
-  SecurityFilterChain worker(HttpSecurity http) throws Exception {
+  SecurityFilterChain workerFilterChain(HttpSecurity http) throws Exception {
     return http.authorizeHttpRequests(a ->
             a.requestMatchers(EndpointRequest.toAnyEndpoint()).permitAll().anyRequest().denyAll())
         .build();
