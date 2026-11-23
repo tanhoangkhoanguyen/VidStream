@@ -82,6 +82,8 @@ services:
       VIDSTREAM_DATASETSFILE: file:/app/datasets.yml
       VIDSTREAM_DOMAIN: ${VIDSTREAM_DOMAIN:?}
       VIDSTREAM_S3_ENDPOINT: http://s3.internal:3900
+      # Where workers upload: Caddy passes only presigned PUTs to Garage.
+      VIDSTREAM_S3_PUBLICENDPOINT: https://s3.${VIDSTREAM_DOMAIN:?}
       VIDSTREAM_S3_ACCESSKEY: ${GARAGE_KEY_ID:?}
       VIDSTREAM_S3_SECRETKEY: ${GARAGE_SECRET_KEY:?}
     volumes:
@@ -138,7 +140,7 @@ services:
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
-    depends_on: [web, ls-dev]
+    depends_on: [web, ls-dev, garage]
     healthcheck:
       test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:2019/config/"]
 

@@ -5,6 +5,20 @@
 	reverse_proxy web:8080
 }
 
+# Workers' clip uploads only (#153): a PUT presigned by the web node, for one object, with its
+# length and SHA-256. Garage refuses anything else it is sent; nothing else is sent. Host is passed
+# as is: the signature covers it.
+s3.{$VIDSTREAM_DOMAIN} {
+	@upload {
+		method PUT
+		query X-Amz-Signature=*
+	}
+	handle @upload {
+		reverse_proxy garage:3900
+	}
+	respond 403
+}
+
 # Every request, including clip Range requests, passes the gate first; only a 2xx reaches Label Studio.
 dev.{$VIDSTREAM_DOMAIN} {
 	forward_auth web:8080 {
