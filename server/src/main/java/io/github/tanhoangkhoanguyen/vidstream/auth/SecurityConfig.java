@@ -1,5 +1,6 @@
 package io.github.tanhoangkhoanguyen.vidstream.auth;
 
+import jakarta.servlet.DispatcherType;
 import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,9 +15,13 @@ class SecurityConfig {
 
   @Bean
   @Profile("web")
-  SecurityFilterChain web(HttpSecurity http) throws Exception {
+  SecurityFilterChain webFilterChain(HttpSecurity http) throws Exception {
     return http.authorizeHttpRequests(a ->
             a.requestMatchers(EndpointRequest.toAnyEndpoint())
+                .permitAll()
+                // An error keeps its status, e.g. the worker API's 401, instead of a redirect to
+                // sign-in.
+                .dispatcherTypeMatchers(DispatcherType.ERROR)
                 .permitAll()
                 // Answers 401 itself: a redirect to sign-in would land on the dataset host.
                 .requestMatchers(GateController.PATH)
@@ -31,7 +36,7 @@ class SecurityConfig {
 
   @Bean
   @Profile("worker")
-  SecurityFilterChain worker(HttpSecurity http) throws Exception {
+  SecurityFilterChain workerFilterChain(HttpSecurity http) throws Exception {
     return http.authorizeHttpRequests(a ->
             a.requestMatchers(EndpointRequest.toAnyEndpoint()).permitAll().anyRequest().denyAll())
         .build();

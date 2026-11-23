@@ -9,12 +9,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Discovery runs, on demand and daily, with any member's token. Web role only: a single node, so an
- * in-memory guard keeps one scan per dataset at a time.
+ * Discovery runs, on demand and daily, with any member's token. An in-memory guard keeps one scan
+ * per dataset at a time on this node.
  */
 @Component
 @Profile("web")
@@ -58,8 +57,8 @@ public class VideoScan {
     return true;
   }
 
-  @Scheduled(cron = "0 0 3 * * *", zone = "America/New_York")
-  void daily() {
+  /** Every active dataset: new videos appear without a member asking. */
+  public void scanActive() {
     jdbc.sql("SELECT name FROM datasets WHERE active")
         .query(String.class)
         .list()

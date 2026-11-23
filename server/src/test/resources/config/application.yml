@@ -1,11 +1,11 @@
-# Test-only values for both roles (token key: 32 zero bytes).
+# Test-only values for both roles.
 vidstream:
-  token-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-spring:
-  security:
-    oauth2:
-      client:
-        registration:
-          box:
-            client-id: test-client
-            client-secret: test-secret
+  # Nothing listens there: the worker role test's slots only retry.
+  worker:
+    server: http://localhost:9
+    token: vsw_test
+  # Never called in role tests; S3 tests use a Garage container.
+  s3:
+    endpoint: http://s3.test:3900
+    access-key: test
+    secret-key: test

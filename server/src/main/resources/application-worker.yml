@@ -2,7 +2,8 @@
 server:
   port: -1
 spring:
-  datasource:
-    hikari:
-      # Short transactions only (claim, heartbeat, commit); ffmpeg runs without a connection.
-      maximum-pool-size: 2
+  autoconfigure:
+    # No database: workers reach the queue through the worker API only.
+    exclude:
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+      - org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration

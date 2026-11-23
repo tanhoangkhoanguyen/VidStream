@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -13,6 +14,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /** Registers the videos in a dataset's Box folder. Metadata only: nothing is downloaded. */
 @Service
+@Profile("web")
 public class VideoDiscovery {
 
   private static final Logger log = LoggerFactory.getLogger(VideoDiscovery.class);

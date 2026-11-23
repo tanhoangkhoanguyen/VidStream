@@ -9,6 +9,7 @@
 <p><a th:href="@{/}">All datasets</a></p>
 <h1 th:text="${name}">dataset</h1>
 <p th:if="${notice}" th:text="${notice}">notice</p>
+<p th:if="${paused}">Paused: no member has a Box sign-in. Work resumes when a member signs in.</p>
 <p><a th:href="${labelStudio}">Label in Label Studio</a></p>
 <h2>Videos</h2>
 <ul th:unless="${videos.isEmpty()}">

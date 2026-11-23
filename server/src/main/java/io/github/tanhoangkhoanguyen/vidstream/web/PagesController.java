@@ -2,6 +2,7 @@ package io.github.tanhoangkhoanguyen.vidstream.web;
 
 import io.github.tanhoangkhoanguyen.vidstream.auth.DatasetAuthorities;
 import io.github.tanhoangkhoanguyen.vidstream.config.VidStreamProperties;
+import io.github.tanhoangkhoanguyen.vidstream.dataset.PausedDatasets;
 import io.github.tanhoangkhoanguyen.vidstream.video.VideoCounts;
 import io.github.tanhoangkhoanguyen.vidstream.video.VideoScan;
 import java.util.Objects;
@@ -24,11 +25,14 @@ class PagesController {
   private final String domain;
   private final VideoScan scan;
   private final VideoCounts counts;
+  private final PausedDatasets paused;
 
-  PagesController(VidStreamProperties props, VideoScan scan, VideoCounts counts) {
+  PagesController(
+      VidStreamProperties props, VideoScan scan, VideoCounts counts, PausedDatasets paused) {
     this.domain = Objects.requireNonNull(props.domain(), "vidstream.domain is not set");
     this.scan = scan;
     this.counts = counts;
+    this.paused = paused;
   }
 
   @GetMapping("/")
@@ -43,6 +47,7 @@ class PagesController {
     model.addAttribute("name", name);
     model.addAttribute("labelStudio", "https://" + name + "." + domain + "/");
     model.addAttribute("videos", counts.byStatus(name));
+    model.addAttribute("paused", paused.isPaused(name));
     return "dataset";
   }
 

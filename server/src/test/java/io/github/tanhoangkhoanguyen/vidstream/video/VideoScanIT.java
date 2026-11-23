@@ -80,10 +80,10 @@ class VideoScanIT {
   }
 
   @Test
-  void dailyScansActiveDatasets() throws Exception {
+  void scansEveryActiveDataset() throws Exception {
     var scan = new VideoScan(jdbc, (id, folder) -> scanned.add(folder));
 
-    scan.daily();
+    scan.scanActive();
 
     await(() -> scanned.size() == 2);
     assertThat(scanned).containsExactlyInAnyOrder("1", "2");

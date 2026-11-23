@@ -8,6 +8,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -16,6 +17,8 @@ import io.github.tanhoangkhoanguyen.vidstream.PostgresTestConfig;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.IntStream;
@@ -34,6 +37,7 @@ import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 // Not rolled back: the threads need committed rows. Cleaned up after each test.
 @JdbcTest(properties = "vidstream.role=web")
@@ -99,6 +103,39 @@ class TokenVaultIT {
   }
 
   @Test
+  void validTokenIsReadWithoutTheRowLock() throws Exception {
+    long id = user(Duration.ofHours(1));
+    var locked = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    var tx = new TransactionTemplate(txManager);
+    // Another caller holds the row lock, as during a refresh.
+    var holder =
+        Thread.ofVirtual()
+            .start(() ->
+                tx.executeWithoutResult(status -> {
+                  jdbc.sql("SELECT id FROM users WHERE id = ? FOR UPDATE")
+                      .param(id)
+                      .query()
+                      .rowSet();
+                  locked.countDown();
+                  try {
+                    release.await();
+                  } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                  }
+                }));
+    assertThat(locked.await(5, SECONDS)).isTrue();
+
+    try {
+      assertThat(CompletableFuture.supplyAsync(() -> vault.accessToken(id)).get(2, SECONDS))
+          .isEqualTo("access-1");
+    } finally {
+      release.countDown();
+      holder.join();
+    }
+  }
+
+  @Test
   void twentyThreadsRefreshOnce() throws Exception {
     // Not expired yet, but under the 5-minute margin.
     long id = user(Duration.ofMinutes(2));
@@ -117,6 +154,27 @@ class TokenVaultIT {
             .withRequestBody(containing("grant_type=refresh_token"))
             .withRequestBody(containing("refresh_token=refresh-1"))
             .withRequestBody(containing("client_secret=test-secret")));
+    var refresh =
+        jdbc.sql("SELECT refresh_token_enc FROM users WHERE id = ?")
+            .param(id)
+            .query(byte[].class)
+            .single();
+    assertThat(cipher.decrypt(refresh)).isEqualTo("refresh-2");
+  }
+
+  @Test
+  void interruptedCallerKeepsRotatedToken() throws Exception {
+    long id = user(Duration.ZERO);
+    var result = new CompletableFuture<String>();
+
+    // A cancelled job: its thread is interrupted while it asks for a token.
+    Thread.ofVirtual()
+        .start(() -> {
+          Thread.currentThread().interrupt();
+          result.complete(vault.accessToken(id) + " " + Thread.currentThread().isInterrupted());
+        });
+
+    assertThat(result.get(5, SECONDS)).isEqualTo("access-2 true");
     var refresh =
         jdbc.sql("SELECT refresh_token_enc FROM users WHERE id = ?")
             .param(id)

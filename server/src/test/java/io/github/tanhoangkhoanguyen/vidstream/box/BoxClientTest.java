@@ -155,4 +155,26 @@ class BoxClientTest {
         .extracting(BoxClient.Item::id)
         .containsExactlyInAnyOrder("10", "11", "12");
   }
+
+  @Test
+  void downloadUrlIsTheRedirectTarget() {
+    var url = "https://dl.boxcloud.test/d/1/secret/download";
+    box.stubFor(
+        get("/2.0/files/7/content")
+            .withHeader("Authorization", equalTo("Bearer token"))
+            .willReturn(aResponse().withStatus(302).withHeader("Location", url)));
+
+    assertThat(client.downloadUrl("token", "7")).hasToString(url);
+  }
+
+  @Test
+  void noDownloadUrlWhileBoxPreparesTheFile() {
+    box.stubFor(
+        get("/2.0/files/7/content")
+            .willReturn(aResponse().withStatus(202).withHeader("Retry-After", "5")));
+
+    assertThatThrownBy(() -> client.downloadUrl("token", "7"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("202");
+  }
 }

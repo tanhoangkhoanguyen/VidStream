@@ -1,16 +1,19 @@
 package io.github.tanhoangkhoanguyen.vidstream.box;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.net.URI;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 /** The Box API calls VidStream makes. Read-only: GET only. */
 @Component
+@Profile("web")
 public class BoxClient {
 
   /** Box allows up to 1000 items per page. */
@@ -83,5 +86,23 @@ public class BoxClient {
       }
     }
     return files;
+  }
+
+  /**
+   * A pre-signed URL to the file's content: needs no token, lives about 10 minutes. It is a
+   * credential: never log it. Box answers 302; the redirect is not followed.
+   */
+  public URI downloadUrl(String accessToken, String fileId) {
+    var response =
+        http.get()
+            .uri("/files/{id}/content", fileId)
+            .headers(h -> h.setBearerAuth(accessToken))
+            .retrieve()
+            .toBodilessEntity();
+    var location = response.getHeaders().getLocation();
+    // 202: Box is not ready to serve the file yet.
+    if (!response.getStatusCode().is3xxRedirection() || location == null)
+      throw new IllegalStateException("Box gave no download URL: " + response.getStatusCode());
+    return location;
   }
 }

@@ -51,13 +51,41 @@ services:
       test: ["CMD", "pg_isready", "-U", "postgres"]
       start_period: 30s
 
+  # Clip store (docs/spikes/clip-storage.md). First start: garage/init.sh.
+  garage:
+    image: dxflrs/garage:v2.5.0
+    restart: unless-stopped
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?}
+    volumes:
+      - ./garage/garage.toml:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+    networks:
+      default:
+      # Label Studio's SSRF guard allows only this subnet; the alias needs a dot.
+      hooks:
+        aliases: [s3.internal]
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+
   web:
     <<: *server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      garage:
+        condition: service_healthy
     environment:
       <<: *server-env
       VIDSTREAM_ROLE: web
       VIDSTREAM_DATASETSFILE: file:/app/datasets.yml
       VIDSTREAM_DOMAIN: ${VIDSTREAM_DOMAIN:?}
+      VIDSTREAM_S3_ENDPOINT: http://s3.internal:3900
+      # Where workers upload: Caddy passes only presigned PUTs to Garage.
+      VIDSTREAM_S3_PUBLICENDPOINT: https://s3.${VIDSTREAM_DOMAIN:?}
+      VIDSTREAM_S3_ACCESSKEY: ${GARAGE_KEY_ID:?}
+      VIDSTREAM_S3_SECRETKEY: ${GARAGE_SECRET_KEY:?}
     volumes:
       - ./datasets.yml:/app/datasets.yml:ro
     networks:
@@ -67,6 +95,8 @@ services:
 
   worker:
     <<: *server
+    # SIGTERM releases running jobs within 20 s; Docker's default 10 s would cut that short.
+    stop_grace_period: 30s
     environment:
       <<: *server-env
       VIDSTREAM_ROLE: worker
@@ -110,7 +140,7 @@ services:
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
-    depends_on: [web, ls-dev]
+    depends_on: [web, ls-dev, garage]
     healthcheck:
       test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:2019/config/"]
 
@@ -126,3 +156,5 @@ volumes:
   postgres:
   ls-dev:
   caddy-data:
+  garage-meta:
+  garage-data:
