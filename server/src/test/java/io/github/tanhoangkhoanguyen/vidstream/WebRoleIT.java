@@ -16,8 +16,10 @@ import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
+import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
 
 @SpringBootTest(
@@ -25,11 +27,17 @@ import org.springframework.test.web.servlet.client.RestTestClient;
     properties = {
       "vidstream.role=web",
       "vidstream.datasets-file=classpath:datasets.yml",
-      "management.server.port=0"
+      "management.server.port=0",
+      // SHA-256 of WORKER_TOKEN.
+      "vidstream.dispatch.workers.it=" + WebRoleIT.WORKER_TOKEN_SHA256
     })
 @AutoConfigureMockMvc
 @Import(PostgresTestConfig.class)
 class WebRoleIT {
+
+  static final String WORKER_TOKEN = "it-token";
+  static final String WORKER_TOKEN_SHA256 =
+      "84dcd0c27ed5eda0c2e244d7ab7a586683f785378586e248f52222b76b79a4ae";
 
   @Autowired MockMvcTester mvc;
 
@@ -172,5 +180,35 @@ class WebRoleIT {
         .hasStatus(HttpStatus.FOUND)
         .cookies()
         .hasMaxAge("vs_session", Duration.ZERO);
+  }
+
+  MvcTestResult workerApi(String authorization) {
+    var request = mvc.post().uri("/api/worker/none");
+    if (authorization != null) request.header(HttpHeaders.AUTHORIZATION, authorization);
+    return request.exchange();
+  }
+
+  /** On a real server, unlike MockMvc, sendError dispatches to /error: still 401, not sign-in. */
+  @Test
+  void workerApiRejectsABadTokenOverHttp() {
+    client(port)
+        .post()
+        .uri("/api/worker/claim")
+        .header(HttpHeaders.AUTHORIZATION, "Bearer vsw_unknown")
+        .exchange()
+        .expectStatus()
+        .isUnauthorized();
+  }
+
+  @Test
+  void workerApiTakesOnlyAConfiguredWorkerToken() {
+    // Authenticated without a session or CSRF: past security, to a path that does not exist.
+    assertThat(workerApi("Bearer " + WORKER_TOKEN))
+        .hasStatus(HttpStatus.NOT_FOUND)
+        .doesNotContainHeader(HttpHeaders.SET_COOKIE);
+    assertThat(workerApi(null))
+        .hasStatus(HttpStatus.UNAUTHORIZED)
+        .containsHeader(HttpHeaders.WWW_AUTHENTICATE);
+    assertThat(workerApi("Bearer unknown")).hasStatus(HttpStatus.UNAUTHORIZED);
   }
 }
