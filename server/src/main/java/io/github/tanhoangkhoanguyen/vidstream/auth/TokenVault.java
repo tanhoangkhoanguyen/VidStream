@@ -12,7 +12,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AccessTokenResponseClient;
 import org.springframework.security.oauth2.client.endpoint.OAuth2RefreshTokenGrantRequest;
 import org.springframework.security.oauth2.client.endpoint.RestClientRefreshTokenTokenResponseClient;
@@ -113,10 +112,8 @@ public class TokenVault {
 
   /**
    * Refreshes every grant idle for {@link #IDLE}, so workers keep a member token while users stay
-   * offline. Only a revoked or expired grant needs the user to sign in again. Runs on every node;
-   * the row lock and validity check make each refresh happen once.
+   * offline. Only a revoked or expired grant needs the user to sign in again. Run daily.
    */
-  @Scheduled(cron = "0 0 4 * * *", zone = "America/New_York")
   public void refreshIdle() {
     var idle =
         jdbc.sql(
