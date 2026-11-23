@@ -50,6 +50,7 @@ dependencies {
   testImplementation(libs.testcontainers.postgresql)
   testImplementation(libs.archunit.junit5)
   testImplementation(libs.wiremock.standalone)
+  testImplementation(libs.awaitility)
   testRuntimeOnly(libs.junit.platform.launcher)
 }
 
