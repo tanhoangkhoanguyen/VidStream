@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 
 import io.github.tanhoangkhoanguyen.vidstream.auth.MemberTokens;
@@ -15,6 +17,7 @@ import io.github.tanhoangkhoanguyen.vidstream.queue.StaleLeaseException;
 import io.github.tanhoangkhoanguyen.vidstream.storage.GarageContainer;
 import io.github.tanhoangkhoanguyen.vidstream.worker.HttpJobSource;
 import io.github.tanhoangkhoanguyen.vidstream.worker.JobSource.Blob;
+import java.lang.management.ManagementFactory;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -23,6 +26,7 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
@@ -32,6 +36,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -141,7 +146,7 @@ class WorkerEndToEndIT {
         .params(dataset, video)
         .update();
 
-    try (var worker = worker()) {
+    try (var worker = worker(2)) {
       awaitClipped(video);
     }
 
@@ -182,7 +187,7 @@ class WorkerEndToEndIT {
     }
     String orphan = upload.url().getPath().substring("/clips-e2e/".length());
 
-    try (var worker = worker()) {
+    try (var worker = worker(2)) {
       // The other chunk is done; the killed worker's lease still holds its own.
       await()
           .atMost(Duration.ofMinutes(1))
@@ -207,13 +212,86 @@ class WorkerEndToEndIT {
         .isInstanceOf(StaleLeaseException.class);
   }
 
-  ConfigurableApplicationContext worker() {
+  /**
+   * Throughput of 1, 2 and 3 one-slot workers on this machine, for docs/benchmarks.md: prints a
+   * BENCHMARK line each. Minutes long, so it runs only with VIDSTREAM_BENCHMARK=true.
+   */
+  @Test
+  @EnabledIfEnvironmentVariable(named = "VIDSTREAM_BENCHMARK", matches = "true")
+  void throughputByWorkers() throws Exception {
+    int videos = 4;
+    int seconds = 120;
+    media.ffmpeg(
+        "bench.mp4",
+        "-f lavfi -i testsrc2=duration=%d:size=1280x720:rate=30 -f lavfi -i sine=duration=%d"
+                .formatted(seconds, seconds)
+            + " -c:v libx264 -preset ultrafast -b:v 2M -c:a aac");
+    given(box.downloadUrl(eq("box-token"), anyString())).willReturn(media.url("bench.mp4"));
+    var os =
+        (com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+
+    for (int workers = 1; workers <= 3; workers++) {
+      var apps = new ArrayList<ConfigurableApplicationContext>();
+      try {
+        for (int i = 0; i < workers; i++) apps.add(worker(1));
+        long start = System.nanoTime();
+        for (int v = 0; v < videos; v++) {
+          var file = "bench-" + workers + "-" + v;
+          long video =
+              jdbc.sql(
+                      "INSERT INTO videos (dataset_id, box_file_id, sha1, size_bytes)"
+                          + " VALUES (?, ?, ?, 1) RETURNING id")
+                  .params(dataset, file, file)
+                  .query(Long.class)
+                  .single();
+          jdbc.sql("INSERT INTO jobs (type, dataset_id, video_id) VALUES ('PROBE', ?, ?)")
+              .params(dataset, video)
+              .update();
+        }
+        double load = 0;
+        int samples = 0;
+        while (count("SELECT count(*) FROM videos WHERE status = 'CLIPPED'") < videos) {
+          assertThat(
+                  jdbc.sql("SELECT type || ': ' || last_error FROM jobs WHERE status = 'FAILED'")
+                      .query(String.class)
+                      .list())
+              .isEmpty();
+          assertThat(System.nanoTime() - start).isLessThan(Duration.ofMinutes(20).toNanos());
+          Thread.sleep(500);
+          load += os.getCpuLoad();
+          samples++;
+        }
+        double wall = (System.nanoTime() - start) / 1e9;
+        System.out.printf(
+            "BENCHMARK workers=%d: %d videos of %d s (%d chunks) in %.1f s: %.2f video-s/s,"
+                + " machine CPU %.0f%%%n",
+            workers,
+            videos,
+            seconds,
+            count("SELECT count(*) FROM units") / 2,
+            wall,
+            videos * seconds / wall,
+            100 * load / samples);
+      } finally {
+        apps.forEach(ConfigurableApplicationContext::close);
+      }
+      Thread.sleep(Duration.ofSeconds(CLAIM_WAIT_S).plusMillis(500)); // As in cleanUp.
+      for (var table : new String[] {"units", "clips", "jobs", "videos"})
+        jdbc.sql("DELETE FROM " + table).update();
+    }
+  }
+
+  long count(String sql) {
+    return jdbc.sql(sql).query(Long.class).single();
+  }
+
+  ConfigurableApplicationContext worker(int slots) {
     return new SpringApplicationBuilder(VidStreamApplication.class)
         .run(
             "--vidstream.role=worker",
             "--vidstream.worker.server=" + server,
             "--vidstream.worker.token=" + TOKEN,
-            "--vidstream.worker.slots=2",
+            "--vidstream.worker.slots=" + slots,
             "--vidstream.worker.work-dir=" + dir.resolve("work"),
             "--management.server.port=0");
   }

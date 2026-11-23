@@ -7,6 +7,8 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -63,10 +65,13 @@ public final class TestMedia implements AutoCloseable {
             .set("Content-Range", "bytes " + start + "-" + end + "/" + size);
       }
       exchange.getResponseHeaders().set("Accept-Ranges", "bytes");
+      // ffmpeg reuses a connection after hanging up mid-body to seek; this server then drops it.
+      exchange.getResponseHeaders().set("Connection", "close");
       exchange.sendResponseHeaders(partial ? 206 : 200, end - start + 1);
-      try (var in = Files.newInputStream(file)) {
-        in.skipNBytes(start);
-        exchange.getResponseBody().write(in.readNBytes((int) (end - start + 1)));
+      // Streamed: ranges of a large file, served at once, would not fit in the test heap.
+      try (var in = FileChannel.open(file)) {
+        var out = Channels.newChannel(exchange.getResponseBody());
+        for (long at = start; at <= end; ) at += in.transferTo(at, end - at + 1, out);
       } catch (IOException e) {
         // ffmpeg hung up to seek elsewhere.
       }
