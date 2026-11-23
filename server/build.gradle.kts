@@ -50,7 +50,8 @@ dependencies {
   implementation(libs.aws.url.connection.client)
   runtimeOnly(libs.micrometer.registry.prometheus)
   runtimeOnly(libs.flyway.database.postgresql)
-  runtimeOnly(libs.postgresql)
+  // Compile scope: the job listener uses PGConnection.getNotifications.
+  implementation(libs.postgresql)
 
   testImplementation(libs.spring.boot.starter.webmvc.test)
   testImplementation(libs.spring.boot.starter.jdbc.test)
