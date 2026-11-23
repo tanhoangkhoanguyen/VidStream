@@ -20,7 +20,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -60,8 +59,11 @@ public class Worker implements SmartLifecycle {
   /** A few beats per lease: one missed beat does not lose the job. */
   static final Duration HEARTBEAT = JobQueue.LEASE.dividedBy(3);
 
-  /** Well within Docker's stop grace period (compose {@code stop_grace_period}). */
-  static final Duration STOP_TIMEOUT = Duration.ofSeconds(20);
+  /**
+   * Past a waiting claim's end ({@code vidstream.dispatch.claim-wait}, 20 s by default), within
+   * Docker's stop grace period (compose {@code stop_grace_period}, 30 s).
+   */
+  static final Duration STOP_TIMEOUT = Duration.ofSeconds(25);
 
   private final JobSource source;
   private final Map<Type, JobExecutor<?, ?>> executors;
@@ -114,8 +116,9 @@ public class Worker implements SmartLifecycle {
   }
 
   /**
-   * Claims nothing new: ends waiting claims; cancels running jobs and releases them, so other
-   * workers take them.
+   * Claims nothing new; cancels running jobs and releases them, so other workers take them. A
+   * waiting claim is left to end: cancelled, the server would still lease it a job, stuck until the
+   * lease expires; a job it returns is released.
    */
   @Override
   public void stop() {
@@ -141,10 +144,8 @@ public class Worker implements SmartLifecycle {
     long retry = MIN_RETRY.toMillis();
     while (running) {
       try {
-        claim(worker).ifPresent(this::process);
+        source.claim(worker, claimableTypes()).ifPresent(this::process);
         retry = MIN_RETRY.toMillis();
-      } catch (CancellationException e) {
-        return; // stop() ended the claim.
       } catch (RuntimeException e) {
         log.error("Worker {}: job source unreachable", worker, e);
         try {
@@ -156,29 +157,6 @@ public class Worker implements SmartLifecycle {
         }
         retry = Math.min(retry * 2, MAX_RETRY.toMillis());
       }
-    }
-  }
-
-  /**
-   * On its own thread, as an execution: stop() cancels a waiting claim without interrupting the
-   * slot, whose reports must still go out. A job leased just as it is cancelled is retried once its
-   * lease expires.
-   */
-  private Optional<Assignment> claim(String worker) {
-    var task = new FutureTask<Optional<Assignment>>(() -> source.claim(worker, claimableTypes()));
-    inFlight.add(task);
-    try {
-      if (!running) task.cancel(true); // stop() ran before the add.
-      Thread.ofVirtual().name("claim-" + worker).start(task);
-      return task.get();
-    } catch (ExecutionException e) {
-      throw e.getCause() instanceof RuntimeException cause
-          ? cause
-          : new IllegalStateException(e.getCause());
-    } catch (InterruptedException e) {
-      throw new CancellationException(); // Not interrupted otherwise: only stopping ends a slot.
-    } finally {
-      inFlight.remove(task);
     }
   }
 
@@ -199,7 +177,7 @@ public class Worker implements SmartLifecycle {
           return WireJson.MAPPER.valueToTree(execute(executors.get(job.type()), job, work));
         });
     inFlight.add(task);
-    if (!running) task.cancel(true); // stop() ran after the claim.
+    if (!running) task.cancel(true); // stop() ran during the claim.
     var thread = Thread.ofVirtual().name("job-" + job.id()).start(task);
     try {
       source.complete(job, await(job, task, thread));

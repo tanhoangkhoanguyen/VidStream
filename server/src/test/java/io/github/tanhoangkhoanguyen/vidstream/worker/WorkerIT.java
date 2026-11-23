@@ -339,22 +339,30 @@ class WorkerIT {
   }
 
   @Test
-  void stopEndsAWaitingClaim() throws Exception {
+  void stopLetsAWaitingClaimEndAndReleasesItsJob() throws Exception {
     notifications = new JobNotifications(db);
     notifications.start();
     var fake = new Fake(Type.PROBE, false, j -> {});
     var source =
         new JobService(
-            queue, jdbc, List.of(fake), storeCapacity, notifications, Duration.ofMinutes(1));
+            queue, jdbc, List.of(fake), storeCapacity, notifications, Duration.ofSeconds(2));
     worker = new Worker(source, List.of(fake), new WorkerProperties(1, null, null, null, null));
     worker.start();
     Thread.sleep(500); // Waiting in the claim by now.
 
-    long started = System.nanoTime();
-    worker.stop();
+    var stopping = CompletableFuture.runAsync(worker::stop);
+    Thread.sleep(200); // Stopping by now; the claim still waits.
+    long job = probe("a", true);
+    stopping.get(5, SECONDS);
 
-    // Not the minute of the poll, nor the stop timeout.
-    assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(2));
+    // Leased by the claim, then given back: not counted, claimable at once.
+    assertThat(state(job)).isEqualTo("PENDING 0");
+    assertThat(
+            jdbc.sql("SELECT lease_version FROM jobs WHERE id = ?")
+                .param(job)
+                .query(Integer.class)
+                .single())
+        .isEqualTo(1);
   }
 
   @Test

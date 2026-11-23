@@ -63,13 +63,12 @@ import tools.jackson.databind.json.JsonMapper;
       "vidstream.role=web",
       "vidstream.datasets-file=classpath:datasets.yml",
       "management.server.port=0",
-      "vidstream.dispatch.claim-wait=PT" + WorkerEndToEndIT.CLAIM_WAIT_S + "S",
+      "vidstream.dispatch.claim-wait=PT2S",
       "vidstream.dispatch.workers.e2e=" + WorkerEndToEndIT.TOKEN_SHA256
     })
 @Import(PostgresTestConfig.class)
 class WorkerEndToEndIT {
 
-  static final int CLAIM_WAIT_S = 2;
   static final String TOKEN = "e2e-token";
   static final String TOKEN_SHA256 =
       "cc318af2129b329b084ebdf17f2608bf3d8a7da6082f345cebf205833876fd88";
@@ -128,10 +127,7 @@ class WorkerEndToEndIT {
 
   /** Other ITs share the database. */
   @AfterEach
-  void cleanUp() throws InterruptedException {
-    // A closed worker's claim still waits on the web until claim-wait ends; the next test's job
-    // would be leased to it.
-    Thread.sleep(Duration.ofSeconds(CLAIM_WAIT_S).plusMillis(500));
+  void cleanUp() {
     for (var table : new String[] {"units", "clips", "jobs", "videos"})
       jdbc.sql("DELETE FROM " + table).update();
     jdbc.sql("DELETE FROM dataset_members WHERE dataset_id = ?").param(dataset).update();
@@ -275,7 +271,6 @@ class WorkerEndToEndIT {
       } finally {
         apps.forEach(ConfigurableApplicationContext::close);
       }
-      Thread.sleep(Duration.ofSeconds(CLAIM_WAIT_S).plusMillis(500)); // As in cleanUp.
       for (var table : new String[] {"units", "clips", "jobs", "videos"})
         jdbc.sql("DELETE FROM " + table).update();
     }
