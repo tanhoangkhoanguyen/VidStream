@@ -16,6 +16,8 @@ import io.github.tanhoangkhoanguyen.vidstream.box.BoxProperties;
 import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -30,11 +32,15 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AccessTokenResponse;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+// Not rolled back: the vault reads tokens on its own thread. Cleaned up after each test.
 @JdbcTest(properties = "vidstream.role=web")
 @Import(PostgresTestConfig.class)
+@Transactional(propagation = Propagation.NOT_SUPPORTED)
 class MemberTokensIT {
 
   @RegisterExtension
@@ -81,6 +87,13 @@ class MemberTokensIT {
             .single();
   }
 
+  @AfterEach
+  void cleanUp() {
+    jdbc.sql("DELETE FROM dataset_members").update();
+    jdbc.sql("DELETE FROM datasets").update();
+    jdbc.sql("DELETE FROM users").update();
+  }
+
   /** A member with a cached access token; null: no usable token. */
   long member(String token) {
     var sql =
@@ -122,6 +135,16 @@ class MemberTokensIT {
     String used = members.call(dataset, token -> token);
 
     assertThat(used).isEqualTo("b");
+  }
+
+  @Test
+  void callsTakeTurnsAmongMembers() {
+    member("a");
+    member("b");
+
+    var used = IntStream.range(0, 3).mapToObj(i -> members.call(dataset, token -> token));
+
+    assertThat(used).containsExactly("a", "b", "a");
   }
 
   @Test

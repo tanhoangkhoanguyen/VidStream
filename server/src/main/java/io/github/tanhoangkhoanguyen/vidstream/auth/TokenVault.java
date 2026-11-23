@@ -5,9 +5,12 @@ import static java.time.ZoneOffset.UTC;
 import io.github.tanhoangkhoanguyen.vidstream.box.BoxHttp;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AccessTokenResponseClient;
@@ -31,6 +34,7 @@ import org.springframework.web.client.RestClient;
  * rotates the refresh token on every refresh, so two nodes refreshing at once would lose it.
  */
 @Service
+@Profile("web")
 public class TokenVault {
 
   private static final Logger log = LoggerFactory.getLogger(TokenVault.class);
@@ -85,14 +89,24 @@ public class TokenVault {
   private record Stored(byte[] refresh, byte[] access, OffsetDateTime expiresAt) {}
 
   /**
-   * Holds a DB connection during the refresh call; refreshes are rare (about once an hour). Other
-   * refresh errors (Box 5xx, network) are thrown and keep the stored tokens.
+   * A valid cached token is read without a lock, so concurrent jobs never queue on the user's row.
+   * Only a refresh locks it, holding a DB connection during the call; refreshes are rare (about
+   * once an hour). Other refresh errors (Box 5xx, network) are thrown and keep the stored tokens.
    *
    * @throws SignInRequiredException the user has no usable token; try another member
    */
   public String accessToken(long userId) {
-    // Committed before throwing, so a rejected token is cleared for good.
-    var token = tx.execute(status -> lockedAccessToken(userId));
+    // On its own thread: interrupting the caller (a cancelled job) must not cut a refresh short
+    // after Box rotated the refresh token, or the new one is lost. Committed before throwing, so a
+    // rejected token is cleared for good.
+    String token;
+    try {
+      token =
+          CompletableFuture.supplyAsync(() -> cachedOrRefreshed(userId), Thread::startVirtualThread)
+              .join(); // Not interruptible.
+    } catch (CompletionException e) {
+      throw e.getCause() instanceof RuntimeException cause ? cause : e;
+    }
     if (token == null) throw new SignInRequiredException(userId);
     return token;
   }
@@ -143,20 +157,36 @@ public class TokenVault {
   }
 
   /** Null when the user must sign in again. */
-  private String lockedAccessToken(long userId) {
-    var stored =
-        jdbc.sql(
-                "SELECT refresh_token_enc, access_token_enc, access_expires_at FROM users"
-                    + " WHERE id = ? FOR UPDATE")
-            .param(userId)
-            .query((rs, i) ->
-                new Stored(rs.getBytes(1), rs.getBytes(2), rs.getObject(3, OffsetDateTime.class)))
-            .optional()
-            .orElseThrow(() -> new IllegalArgumentException("no user " + userId));
-    if (stored.access() == null) return null;
-    if (stored.expiresAt().isAfter(OffsetDateTime.now().plus(MIN_VALIDITY)))
-      return cipher.decrypt(stored.access());
+  private String cachedOrRefreshed(long userId) {
+    var stored = read(userId, "");
+    if (isValid(stored)) return cipher.decrypt(stored.access());
     if (stored.refresh() == null) return null;
+    return tx.execute(status -> lockedAccessToken(userId));
+  }
+
+  private Stored read(long userId, String lock) {
+    return jdbc.sql(
+            "SELECT refresh_token_enc, access_token_enc, access_expires_at FROM users WHERE id = ?"
+                + lock)
+        .param(userId)
+        .query((rs, i) ->
+            new Stored(rs.getBytes(1), rs.getBytes(2), rs.getObject(3, OffsetDateTime.class)))
+        .optional()
+        .orElseThrow(() -> new IllegalArgumentException("no user " + userId));
+  }
+
+  private static boolean isValid(Stored stored) {
+    return stored.access() != null
+        && stored.expiresAt().isAfter(OffsetDateTime.now().plus(MIN_VALIDITY));
+  }
+
+  /**
+   * Re-checked under the lock: another caller may have refreshed meanwhile. Null: sign in again.
+   */
+  private String lockedAccessToken(long userId) {
+    var stored = read(userId, " FOR UPDATE");
+    if (isValid(stored)) return cipher.decrypt(stored.access());
+    if (stored.access() == null || stored.refresh() == null) return null;
     try {
       return refresh(userId, stored);
     } catch (OAuth2AuthorizationException e) {

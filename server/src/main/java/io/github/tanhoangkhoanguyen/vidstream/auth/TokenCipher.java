@@ -14,10 +14,12 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /** AES-256-GCM for Box tokens at rest. Stored as random 12-byte nonce, then ciphertext and tag. */
 @Component
+@Profile("web")
 public class TokenCipher {
 
   private static final int NONCE_BYTES = 12;
